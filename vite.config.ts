@@ -10,17 +10,6 @@ export default defineConfig(({ mode }) => ({
     port: 8080,
     hmr: { overlay: false },
     watch: { usePolling: true },
-    proxy: {
-      "/api/anthropic": {
-        target: "https://api.anthropic.com",
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/anthropic/, ""),
-        headers: {
-          "x-api-key": process.env.ANTHROPIC_API_KEY || "",
-          "anthropic-version": "2023-06-01",
-        },
-      },
-    },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
