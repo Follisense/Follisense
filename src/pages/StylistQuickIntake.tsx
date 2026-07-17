@@ -95,7 +95,7 @@ const StylistQuickIntake = () => {
       observations: [...new Set(observations)],
       photos: photoTaken ? ['Pre-styling scalp'] : [],
       photoAreas: photoTaken ? ['General scalp'] : [],
-      notes: `Quick intake — Style: ${finalStyle} | Last wash: ${lastWash}${attentionAreas ? ` | Attention areas: ${attentionAreas}` : ''} | Thinning: ${thinning}`,
+      notes: `Quick intake,Style: ${finalStyle} | Last wash: ${lastWash}${attentionAreas ? ` | Attention areas: ${attentionAreas}` : ''} | Thinning: ${thinning}`,
       risk: computeRisk(),
       location: loc?.name,
       locationCity: loc?.city,
@@ -108,8 +108,8 @@ const StylistQuickIntake = () => {
 
   const riskConfig = {
     green: { text: 'No concerns flagged',                   bg: 'rgba(127,168,150,0.1)',  color: '#3D6B56' },
-    amber: { text: 'Some concerns noted — monitor',         bg: 'rgba(201,153,106,0.1)',  color: '#8A5C2A' },
-    red:   { text: 'Significant concerns — consider referral', bg: 'rgba(201,112,112,0.1)', color: '#8A3030' },
+    amber: { text: 'Some concerns noted,monitor',         bg: 'rgba(201,153,106,0.1)',  color: '#8A5C2A' },
+    red:   { text: 'Significant concerns,consider referral', bg: 'rgba(201,112,112,0.1)', color: '#8A3030' },
   };
 
   return (
@@ -198,7 +198,7 @@ const StylistQuickIntake = () => {
                       Client name
                     </h2>
                     <p style={{ fontSize: '0.75rem', color: '#9e9e9e', marginBottom: '20px' }}>
-                      First name or initials only — no account needed
+                      First name or initials only,no account needed
                     </p>
                     <input
                       type="text"
@@ -369,7 +369,7 @@ const StylistQuickIntake = () => {
                       Quick scalp photo
                     </h2>
                     <p style={{ fontSize: '0.75rem', color: '#9e9e9e', marginBottom: '24px' }}>
-                      Optional — capture the scalp before you start styling
+                      Optional,capture the scalp before you start styling
                     </p>
                     <button
                       onClick={() => setPhotoTaken(!photoTaken)}

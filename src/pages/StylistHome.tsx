@@ -6,7 +6,7 @@ import { dummyLeaderboard } from '@/data/quizQuestions';
 import { useState, useEffect, useMemo } from 'react';
 
 // ─── paste any image URL here for the header background ───────────────────
-// great options: unsplash.com — search "textured hair", "natural hair care"
+// great options: unsplash.com,search "textured hair", "natural hair care"
 // e.g. 'https://images.unsplash.com/photo-xxxxx?w=800&q=80'
 const HERO_IMAGE = ''; // ← drop your URL here, leave empty to skip
 // ──────────────────────────────────────────────────────────────────────────
@@ -100,7 +100,7 @@ const StylistHome = () => {
 
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
 
-        {/* ── Header — with optional hero image fading into background ── */}
+        {/* ── Header,with optional hero image fading into background ── */}
         <div style={{ position: 'relative', padding: '28px 20px 24px', overflow: 'hidden' }}>
 
           {/* Background image, fades out at the bottom */}
@@ -251,8 +251,8 @@ const StylistHome = () => {
               <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>
                 Ranked <strong style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>#{userRank}</strong>
                 {nextUp
-                  ? <> — <strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{ptsGap} pts</strong> behind {nextUp.name}</>
-                  : <> — you're at the top!</>}
+                  ? <>,<strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{ptsGap} pts</strong> behind {nextUp.name}</>
+                  : <>,you're at the top!</>}
               </span>
             </div>
             <button
@@ -294,7 +294,7 @@ const StylistHome = () => {
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 2px' }}>Weekly Challenge</p>
-              <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', margin: 0 }}>10 seconds per question — faster = more pts</p>
+              <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', margin: 0 }}>10 seconds per question,faster = more pts</p>
             </div>
             <div style={{ textAlign: 'right', flexShrink: 0 }}>
               <p style={{ fontFamily: playfair, fontSize: 22, fontWeight: 500, color: 'var(--color-text-primary)', margin: 0, lineHeight: 1 }}>{quiz.challengeHighScore || 0}</p>
@@ -350,7 +350,7 @@ const StylistHome = () => {
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', margin: 0 }}>
-                      {obs.clientName}{obs.location ? ` — ${obs.location}` : ''}
+                      {obs.clientName}{obs.location ? `,${obs.location}` : ''}
                     </p>
                     <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', margin: '1px 0 0' }}>
                       {obs.date}{obs.locationCity ? `, ${obs.locationCity}` : ''}

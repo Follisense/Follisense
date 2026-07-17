@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Camera, Upload, Check, X, ClipboardCheck } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { supabase } from '@/lib/supabaseClient';
+import { useApp } from '@/contexts/AppContext';
 
 const dm       = "'DM Sans', sans-serif";
 const playfair = "'Playfair Display', serif";
@@ -51,6 +53,12 @@ const primaryBtn: React.CSSProperties = {
   boxShadow: '0 4px 14px rgba(45,110,85,0.28)',
 };
 
+interface CapturedPhoto {
+  id: string;
+  region: string;
+  dataUrl: string;
+}
+
 const SalonCheckIn = () => {
   const navigate = useNavigate();
   const [step, setStep]                     = useState(0);
@@ -58,6 +66,7 @@ const SalonCheckIn = () => {
   const [selectedRegion, setSelectedRegion] = useState(regions[0]);
   const [selectedObservations, setSelectedObservations] = useState<string[]>([]);
   const [note, setNote]                     = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const toggleObservation = (id: string) => {
     if (id === 'healthy') {
@@ -70,21 +79,153 @@ const SalonCheckIn = () => {
     });
   };
 
-  const handleCapture = (capture?: string) => {
+
+  // ─── Helper: Convert dataURL to File (same as your onboarding) ───
+  const dataURLtoFile = (dataUrl: string, filename: string): File => {
+    const arr = dataUrl.split(',');
+    const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) u8arr[n] = bstr.charCodeAt(n);
+    return new File([u8arr], filename, { type: mime });
+  };
+  
+  // ─── Upload single image to Supabase Storage ───
+  const uploadImageToSupabase = async (file: File, userId: string, region: string): Promise<string> => {
+    const fileName = `${region}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+    const filePath = `${userId}/salon-checkin/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('Salon-photos')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: 'image/jpeg',
+      });
+
+    if (uploadError) throw uploadError;
+
+    const { data: urlData } = supabase.storage
+      .from('Salon-photos')
+      .getPublicUrl(filePath);
+
+    return urlData.publicUrl;
+  };
+
+  const uploadSalonPhoto = async (file: File, userId: string, region: string): Promise<string> => {
+    const fileName = `${region}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+    const filePath = `${userId}/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('Salon-photos')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: 'image/jpeg',
+      });
+
+    if (uploadError) throw uploadError;
+
+    const { data: urlData } = supabase.storage.from('Salon-photos').getPublicUrl(filePath);
+    return urlData.publicUrl;
+  };
+  
+  // ─── Complete Check-in ───
+  const handleComplete = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    
+    try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.user) {
+        throw new Error('No active session. Please log in again.');
+      }
+
+      const userId = session.user.id;
+
+      // 1. Create salon_visits record
+      const { data: visitData, error: visitError } = await supabase
+        .from('salon_visits')
+        .insert({
+          user_id: userId,
+          visit_type: 'stylist_checkin',
+          observations: selectedObservations.map(id =>
+            observations.find(o => o.id === id)?.label || id
+          ),
+          notes: note.trim() || null,
+        })
+        .select('id')
+        .single();
+
+      if (visitError || !visitData) {
+        throw visitError || new Error('Failed to create visit record');
+      }
+
+      const salonVisitId = visitData.id;
+
+      // 2. Upload photos and save to salon_visit_photos table
+      const photoPromises = photos.map(async (photo) => {
+        try {
+          const file = dataURLtoFile(photo.dataUrl, `${photo.region}.jpg`);
+          const photoUrl = await uploadSalonPhoto(file, userId, photo.region);
+
+          await supabase.from('salon_visit_photos').insert({
+            salon_visit_id: salonVisitId,
+            photo_url: photoUrl,
+            region_tag: photo.region,
+            annotation_notes: null,
+          });
+
+          return photoUrl;
+        } catch (err) {
+          console.error(`Failed to upload photo for ${photo.region}:`, err);
+          return null;
+        }
+      });
+
+      await Promise.all(photoPromises);
+
+      toast({
+        title: 'Salon check-in saved',
+        description: `${photos.length} photo${photos.length !== 1 ? 's' : ''} and observations recorded.`,
+      });
+
+      setStep(4);
+    } catch (err ) {
+      console.error('Salon check-in error:', err);
+      toast({
+        title: 'Save failed',
+        description: err?.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+
+  const handleCapture = (capture?: 'user' | 'environment') => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
-    if (capture) input.capture = capture as any;
-    input.onchange = (e: any) => {
-      const file = e.target.files?.[0];
+
+    if (capture) {
+      input.capture = capture;
+    }
+    input.onchange = (e: Event) => {
+      const target = e.target as HTMLInputElement;
+      const file = target.files?.[0];
       if (!file) return;
+
       const reader = new FileReader();
-      reader.onload = ev => {
+      reader.onload = (ev) => {
         setPhotos(prev => [...prev, {
           id: `photo-${Date.now()}`,
           region: selectedRegion,
           dataUrl: ev.target?.result as string,
-        }]);
+        }
+      ]);
       };
       reader.readAsDataURL(file);
     };
@@ -92,22 +233,6 @@ const SalonCheckIn = () => {
   };
 
   const removePhoto = (id: string) => setPhotos(prev => prev.filter(p => p.id !== id));
-
-  const handleComplete = () => {
-    try {
-      const existing = JSON.parse(localStorage.getItem('follisense-salon-checkins') || '[]');
-      existing.push({
-        id: `sc-${Date.now()}`,
-        date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-        photos: photos.length,
-        observations: selectedObservations.map(id => observations.find(o => o.id === id)?.label || id),
-        note,
-      });
-      localStorage.setItem('follisense-salon-checkins', JSON.stringify(existing));
-    } catch {}
-    toast({ title: 'Check-in saved', description: 'The salon observation has been added to your timeline.' });
-    setStep(4);
-  };
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, fontFamily: dm, display: 'flex', flexDirection: 'column' }}>
@@ -194,7 +319,7 @@ const SalonCheckIn = () => {
               <p style={{ fontFamily: dm, fontSize: 13, color: C.muted, margin: '0 0 20px' }}>Take photos of different areas. Tag each with the region.</p>
 
               {/* Region pills */}
-              <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 14, marginBottom: 4, scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' as any }}>
+              <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 14, marginBottom: 4, scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' as const }}>
                 {regions.map(r => (
                   <button key={r} onClick={() => setSelectedRegion(r)} style={{
                     flexShrink: 0, padding: '6px 14px', borderRadius: 100,
@@ -263,7 +388,7 @@ const SalonCheckIn = () => {
 
               <div style={{ marginTop: 'auto' }}>
                 <button onClick={() => setStep(2)} style={primaryBtn}>
-                  {photos.length > 0 ? 'Next — Add observations' : 'Skip photos'}
+                  {photos.length > 0 ? 'Next,Add observations' : 'Skip photos'}
                 </button>
               </div>
             </motion.div>
@@ -325,7 +450,7 @@ const SalonCheckIn = () => {
                     boxShadow: selectedObservations.length === 0 ? 'none' : '0 4px 14px rgba(45,110,85,0.28)',
                   }}
                 >
-                  Next — Add notes
+                  Next,Add notes
                 </button>
               </div>
             </motion.div>
@@ -339,12 +464,12 @@ const SalonCheckIn = () => {
               style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
             >
               <h2 style={{ fontFamily: playfair, fontSize: 22, fontWeight: 500, color: C.text, margin: '0 0 4px' }}>Anything else to note?</h2>
-              <p style={{ fontFamily: dm, fontSize: 13, color: C.muted, margin: '0 0 20px' }}>Optional — add anything the client should know</p>
+              <p style={{ fontFamily: dm, fontSize: 13, color: C.muted, margin: '0 0 20px' }}>Optional,add anything the client should know</p>
 
               <textarea
                 value={note}
                 onChange={e => setNote(e.target.value)}
-                placeholder="e.g. Edges are thinning — suggested looser braid tension next time. Noticed some flaking at the crown."
+                placeholder="e.g. Edges are thinning,suggested looser braid tension next time. Noticed some flaking at the crown."
                 rows={5}
                 style={{
                   width: '100%', padding: '14px 16px',
@@ -359,8 +484,8 @@ const SalonCheckIn = () => {
               />
 
               <div style={{ marginTop: 'auto', paddingTop: 16 }}>
-                <button onClick={handleComplete} style={primaryBtn}>
-                  Complete check-in
+                <button onClick={handleComplete} disabled={isSaving} style={primaryBtn}>
+                  {isSaving ? 'Saving...' : 'Complete check-in'}
                 </button>
               </div>
             </motion.div>

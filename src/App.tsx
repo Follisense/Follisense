@@ -1,10 +1,12 @@
+import { useEffect } from 'react';
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { AppProvider } from "./contexts/AppContext";
+import { BrowserRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
+import { AppProvider, useApp } from "./contexts/AppContext";
 import Layout from "./components/Layout";
+import SplashScreen from "./pages/SplashScreen";
 import Welcome from "./pages/Welcome";
 import SignUpPage from "./pages/SignUpPage";
 import LoginPage from "./pages/LoginPage";
@@ -40,62 +42,170 @@ import SalonCheckIn from "./pages/SalonCheckIn";
 import StylistQuickIntake from "./pages/StylistQuickIntake";
 import SpotIt from "./pages/SpotIt";
 import ScalpCheckIn from "./pages/ScalpCheckIn";
+import ShopPage from "./pages/ShopPage";
 import NotFound from "./pages/NotFound";
+import { supabase } from "./lib/supabaseClient";
+import OTPVerificationPage from "./pages/OTPVerificationPage";
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import Terms from './pages/Terms';
+import GoodbyePage from './pages/GoodbyePage';
+import AuthCallback from '@/pages/AuthCallback';
 
 const queryClient = new QueryClient();
 
+// ─── Session guard,restores user on refresh ─────────────────────────────────
+const SessionGuard = ({ children }: { children: React.ReactNode }) => {
+  const navigate   = useNavigate();
+  const location   = useLocation();
+  const { setUserName, setOnboardingComplete, setOnboardingData, onboardingData, onboardingComplete } = useApp();
+
+  // Onboarded users should never see onboarding again,catches in-session
+  // navigation (back button, deep links) without re-running the full restore.
+  useEffect(() => {
+    if (onboardingComplete && location.pathname === '/onboarding') {
+      navigate('/home', { replace: true });
+    }
+  }, [location.pathname, onboardingComplete]);
+
+  useEffect(() => {
+    const restoreSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) {
+          // No session,redirect to login unless already on public pages.
+          // '/' is the splash screen,always allowed so the splash can play.
+         const publicPages = ['/', '/welcome', '/login', '/signup', '/forgot-password', '/verify-otp', '/stylist/login', '/stylist/signup', '/terms', '/privacy', '/auth/callback', '/goodbye'];
+          if (!publicPages.includes(location.pathname)) {
+            navigate('/login');
+          }
+          return;
+        }
+
+        // Session exists,restore name
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('first_name, gender')
+          .eq('id', session.user.id)
+          .single();
+
+        if (profile?.first_name) setUserName(profile.first_name);
+        if (profile?.gender && !onboardingData.gender) {
+          setOnboardingData({ ...onboardingData, gender: profile.gender });
+        }
+
+        // Check if onboarding was completed in Supabase
+        const { data: consumerProfile } = await supabase
+          .from('consumer_profiles')
+          .select('hair_texture')
+          .eq('user_id', session.user.id)
+          .single();
+
+        const hasOnboarded = onboardingComplete || !!consumerProfile?.hair_texture;
+        if (hasOnboarded && !onboardingComplete) {
+          setOnboardingComplete(true);
+        }
+
+        // Onboarded user landing directly on /onboarding (refresh, old link,
+        // notification deep-link) → home, never back to step 1.
+        if (hasOnboarded && location.pathname === '/onboarding') {
+          navigate('/home', { replace: true });
+          return;
+        }
+
+        // If on an auth page and session exists, redirect to home.
+        // NOTE: '/' (splash) and '/welcome' are deliberately NOT here,the
+        // splash screen plays for everyone and decides where to go next itself.
+        const authPages = ['/login', '/signup'];
+        if (authPages.includes(location.pathname)) {
+          navigate(hasOnboarded ? '/home' : '/onboarding');
+        }
+
+      } catch (err) {
+        console.error('[Session] Restore error:', err);
+      }
+    };
+
+    restoreSession();
+  }, []);
+
+  return <>{children}</>;
+};
+
 const App = () => {
-return (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <AppProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Layout>
-            <Routes>
-              <Route path="/" element={<Welcome />} />
-              <Route path="/signup" element={<SignUpPage />} />
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-              <Route path="/onboarding" element={<Onboarding />} />
-              <Route path="/onboarding/baseline-response" element={<BaselineResponse />} />
-              <Route path="/home" element={<HomePage />} />
-              <Route path="/my-routine" element={<MyRoutine />} />
-              <Route path="/routine-tracker" element={<RoutineTracker />} />
-              <Route path="/salon-booking" element={<SalonBooking />} />
-              <Route path="/chat" element={<ChatPage />} />
-              <Route path="/mid-cycle" element={<MidCycleCheckIn />} />
-              <Route path="/wash-day" element={<WashDayAssessment />} />
-              <Route path="/results" element={<RiskOutput />} />
-              <Route path="/clinician-summary" element={<ClinicianSummary />} />
-              <Route path="/health-profile" element={<HealthProfile />} />
-              <Route path="/products" element={<ProductDirectory />} />
-              <Route path="/research" element={<ResearchProgramme />} />
-              <Route path="/find-specialist" element={<FindSpecialist />} />
-              <Route path="/history" element={<HistoryPage />} />
-              <Route path="/learn" element={<LearnPage />} />
-              <Route path="/profile" element={<ProfilePage />} />
-              <Route path="/scalp-check" element={<ScalpCheckIn />} />
-              <Route path="/spot-it" element={<SpotIt />} />
-              <Route path="/salon-checkin" element={<SalonCheckIn />} />
-              <Route path="/stylist/signup" element={<StylistSignUpPage />} />
-              <Route path="/stylist/login" element={<StylistLoginPage />} />
-              <Route path="/stylist/onboarding" element={<StylistOnboarding />} />
-              <Route path="/stylist" element={<StylistHome />} />
-              <Route path="/stylist/learn" element={<StylistLearnPage />} />
-              <Route path="/stylist/observation" element={<StylistObservation />} />
-              <Route path="/stylist/quiz" element={<ScalpQuiz />} />
-              <Route path="/stylist/quick-intake" element={<StylistQuickIntake />} />
-              <Route path="/stylist/clients" element={<StylistClients />} />
-              <Route path="/stylist/profile" element={<StylistProfilePage />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Layout>
-        </BrowserRouter>
-      </AppProvider>
-    </TooltipProvider>
-  </QueryClientProvider>
+  // Register Firebase service worker
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker
+        .register('/firebase-messaging-sw.js')
+        .then((registration) => {
+          console.log('[SW] Registered:', registration.scope);
+        })
+        .catch((err) => {
+          console.error('[SW] Registration failed:', err);
+        });
+    }
+  }, []);
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <AppProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <SessionGuard>
+              <Layout>
+                <Routes>
+                  <Route path="/" element={<SplashScreen />} />
+                  <Route path="/welcome" element={<Welcome />} />
+                  <Route path="/signup" element={<SignUpPage />} />
+                  <Route path="/login" element={<LoginPage />} />
+                  <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                  <Route path="/verify-otp" element={<OTPVerificationPage />} />
+                  <Route path="/onboarding" element={<Onboarding />} />
+                  <Route path="/onboarding/baseline-response" element={<BaselineResponse />} />
+                  <Route path="/home" element={<HomePage />} />
+                  <Route path="/my-routine" element={<MyRoutine />} />
+                  <Route path="/routine-tracker" element={<RoutineTracker />} />
+                  <Route path="/salon-booking" element={<SalonBooking />} />
+                  <Route path="/chat" element={<ChatPage />} />
+                  <Route path="/mid-cycle" element={<MidCycleCheckIn />} />
+                  <Route path="/wash-day" element={<WashDayAssessment />} />
+                  <Route path="/results" element={<RiskOutput />} />
+                  <Route path="/clinician-summary" element={<ClinicianSummary />} />
+                  <Route path="/health-profile" element={<HealthProfile />} />
+                  <Route path="/products" element={<ProductDirectory />} />
+                  <Route path="/shop" element={<ShopPage />} />
+                  <Route path="/research" element={<ResearchProgramme />} />
+                  <Route path="/find-specialist" element={<FindSpecialist />} />
+                  <Route path="/history" element={<HistoryPage />} />
+                  <Route path="/learn" element={<LearnPage />} />
+                  <Route path="/profile" element={<ProfilePage />} />
+                  <Route path="/scalp-check" element={<ScalpCheckIn />} />
+                  <Route path="/spot-it" element={<SpotIt />} />
+                  <Route path="/salon-checkin" element={<SalonCheckIn />} />
+                  <Route path="/stylist/signup" element={<StylistSignUpPage />} />
+                  <Route path="/stylist/login" element={<StylistLoginPage />} />
+                  <Route path="/stylist/onboarding" element={<StylistOnboarding />} />
+                  <Route path="/stylist" element={<StylistHome />} />
+                  <Route path="/stylist/learn" element={<StylistLearnPage />} />
+                  <Route path="/stylist/observation" element={<StylistObservation />} />
+                  <Route path="/stylist/quiz" element={<ScalpQuiz />} />
+                  <Route path="/stylist/quick-intake" element={<StylistQuickIntake />} />
+                  <Route path="/stylist/clients" element={<StylistClients />} />
+                  <Route path="/stylist/profile" element={<StylistProfilePage />} />
+                  <Route path="*" element={<NotFound />} />
+                  <Route path="/terms" element={<Terms />} />
+                  <Route path="/goodbye" element={<GoodbyePage />} />
+                  <Route path="/auth/callback" element={<AuthCallback />} />
+                  <Route path="/privacy" element={<PrivacyPolicy />} />
+                </Routes>
+              </Layout>
+            </SessionGuard>
+          </BrowserRouter>
+        </AppProvider>
+      </TooltipProvider>
+    </QueryClientProvider>
   );
 };
 

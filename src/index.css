@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,46 +6,46 @@
 
 @layer base {
   :root {
-    --background: 36 45% 97%;
-    --foreground: 0 0% 18%;
+    --background: 80 14% 92%;        /* #EDEFE7 green-tinted background */
+    --foreground: 40 13% 12%;        /* #23201A ink */
 
-    --card: 34 30% 93%;
-    --card-foreground: 0 0% 18%;
+    --card: 0 0% 100%;               /* #FFFFFF white cards */
+    --card-foreground: 40 13% 12%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 18%;
+    --popover-foreground: 40 13% 12%;
 
-    --primary: 155 12% 55%;
+    --primary: 149 23% 23%;          /* #2E4A39 brand green */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 34 33% 86%;
-    --secondary-foreground: 0 0% 18%;
+    --secondary: 100 14% 88%;        /* #DDE4DB brand tint */
+    --secondary-foreground: 40 13% 12%;
 
-    --muted: 34 33% 86%;
-    --muted-foreground: 30 3% 46%;
+    --muted: 100 14% 88%;
+    --muted-foreground: 100 4% 43%;  /* #6B6F66 secondary text */
 
-    --accent: 34 20% 92%;
-    --accent-foreground: 0 0% 18%;
+    --accent: 100 14% 90%;
+    --accent-foreground: 40 13% 12%;
 
-    --destructive: 0 38% 54%;
+    --destructive: 9 61% 47%;        /* #C0492F triage red */
     --destructive-foreground: 0 0% 100%;
 
-    --warning: 22 38% 62%;
+    --warning: 35 74% 57%;           /* #E5A23C triage amber */
     --warning-foreground: 0 0% 100%;
 
-    --sage: 155 12% 55%;
-    --sage-light: 155 15% 94%;
+    --sage: 149 23% 23%;             /* now the brand green */
+    --sage-light: 100 20% 94%;       /* pale green tint */
     --sage-foreground: 0 0% 100%;
 
-    --sand: 34 33% 86%;
-    --sand-light: 34 33% 92%;
+    --sand: 100 14% 88%;             /* was brown → now green tint */
+    --sand-light: 100 14% 92%;
 
-    --terracotta: 22 38% 62%;
-    --rose-red: 0 38% 54%;
+    --terracotta: 35 74% 57%;        /* amber — triage only */
+    --rose-red: 9 61% 47%;           /* red — triage only */
 
-    --border: 34 20% 88%;
-    --input: 34 20% 88%;
-    --ring: 155 12% 55%;
+    --border: 100 12% 85%;
+    --input: 100 12% 85%;
+    --ring: 149 23% 23%;
 
     --radius: 1rem;
 
@@ -69,14 +69,14 @@
 
   body {
     @apply bg-background text-foreground font-sans;
-    font-family: 'Montserrat', system-ui, -apple-system, sans-serif;
+    font-family: 'Instrument Sans', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
   h1, h2, h3, h4, h5, h6 {
     @apply font-semibold text-foreground;
-    font-family: 'Montserrat', system-ui, -apple-system, sans-serif;
+    font-family: 'Fraunces', Georgia, serif;
     font-weight: 600;
     line-height: 1.3;
   }

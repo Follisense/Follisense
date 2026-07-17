@@ -36,7 +36,7 @@ const ConditionDetail = ({ condition, onBack }: { condition: ConsumerCondition; 
         <p className="text-sm text-muted-foreground leading-relaxed">{condition.whatIsIt}</p>
       </div>
 
-      {/* Section 2: Photo gallery — styled placeholders */}
+      {/* Section 2: Photo gallery,styled placeholders */}
       <div className="mb-5">
         <h3 className="text-sm font-semibold text-foreground mb-1">What does it look like?</h3>
         <p className="text-xs text-muted-foreground mb-3">Reference photos on textured hair and darker skin tones</p>

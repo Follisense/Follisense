@@ -1,9 +1,11 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 
 export interface BaselinePhoto {
   area: string;
   captured: boolean;
   date: string;
+  dataUrl?: string;
 }
 
 export interface OnboardingData {
@@ -47,6 +49,9 @@ export interface OnboardingData {
   otherHairProduct: string;
   hairProductFrequency: string;
   scalpProductFrequency: string;
+  norwoodBaseline?: string;
+  familyHistory?: string;
+  cutCadence?: string;
 }
 
 export interface CheckInData {
@@ -63,6 +68,8 @@ export interface CheckInData {
   hairConcern?: string;
   newProducts?: string;
   newProductDetails?: string;
+  razorBumps?: string;
+  barberIrritation?: string;
   type: 'mid-cycle' | 'wash-day' | 'baseline';
   date: string;
 }
@@ -154,6 +161,13 @@ export interface ResearchData {
   dismissed: boolean;
 }
 
+// ── Auth user shape ───────────────────────────────────────────
+export interface AppUser {
+  id: string;
+  name: string;
+  email?: string;
+}
+
 const defaultHealthProfile: HealthProfileData = {
   sweat: '', exercise: '', heatStyling: '', satinCovering: '',
   medicalConditions: [], pregnancyStatus: '', medications: '', medicationDetails: '',
@@ -163,6 +177,12 @@ const defaultHealthProfile: HealthProfileData = {
 };
 
 interface AppContextType {
+  // ── Auth ────────────────────────────────────────────────────
+  user: AppUser | null;
+  routineLastUpdated: number;
+  setRoutineLastUpdated: (ts: number) => void;
+
+  // ── Existing state ──────────────────────────────────────────
   userName: string;
   setUserName: (n: string) => void;
   onboardingComplete: boolean;
@@ -221,6 +241,7 @@ const defaultOnboarding: OnboardingData = {
   menstrualTracking: '', lastPeriodDate: '', menstrualCycleLength: '',
   hormonalContraception: '', goals: [], hairProducts: [],
   otherHairProduct: '', hairProductFrequency: '', scalpProductFrequency: '',
+  norwoodBaseline: '', familyHistory: '', cutCadence: '',
 };
 
 const demoHistory: CycleEntry[] = [
@@ -244,7 +265,7 @@ const demoClientObservations: ClientObservation[] = [
 ];
 
 const demoStylistObservations: StylistObservationEntry[] = [
-  { id: 'so1', date: 'Feb 25', stylistName: 'Ama', location: 'Natural Touch Studio, Lekki', observations: ['Thinning at hairline or edges', 'Signs of traction damage'], notes: 'Stylist noted: slight thinning at temples. Recommended loosening edges on next install.', comparison: 'Worse than last time', risk: 'amber' },
+  { id: 'so1', date: 'Feb 25', stylistName: 'Ama', location: 'Natural Touch Studio, Lekki', observations: ['Thinning at hairline or edges', 'Signs of traction damage'], notes: 'Stylist noted: slight thinning at temples.', comparison: 'Worse than last time', risk: 'amber' },
   { id: 'so2', date: 'Feb 2', stylistName: 'Ama', location: 'Natural Touch Studio, Lekki', observations: ['General check, nothing concerning'], comparison: 'About the same', risk: 'green' },
 ];
 
@@ -253,67 +274,140 @@ const defaultStylistLocations: StylistLocation[] = [
   { id: 'loc2', name: 'Home Studio', city: 'Ikeja', isPrimary: false },
 ];
 
-// Demo check-in history for triage comparison
 const demoCheckInHistory: CheckInData[] = [
   { itch: 'Mild', tenderness: 'None', hairline: 'No change', flaking: 'None', shedding: 'Normal', type: 'wash-day', date: 'Apr 2' },
   { itch: 'Moderate', tenderness: 'A little', hairline: 'Looks a bit thinner', flaking: 'Some flaking', shedding: 'More than usual', type: 'wash-day', date: 'Mar 18' },
   { itch: 'Mild', tenderness: 'None', hairline: 'No change', flaking: 'None', shedding: 'Normal', type: 'wash-day', date: 'Feb 20' },
 ];
 
+// ─── localStorage ─────────────────────────────────────────────
+const STORAGE_KEY = 'follisense-app-state';
+const loadState = () => {
+  try {
+    const s = localStorage.getItem(STORAGE_KEY);
+    return s ? JSON.parse(s) : null;
+  } catch { return null; }
+};
+const saveState = (state: object) => {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+};
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
-  const [userName, setUserName] = useState('');
-  const [onboardingComplete, setOnboardingComplete] = useState(false);
-  const [onboardingData, setOnboardingData] = useState<OnboardingData>(defaultOnboarding);
-  const [currentCheckIn, setCurrentCheckIn] = useState<CheckInData | null>(null);
-  const [checkInHistory, setCheckInHistory] = useState<CheckInData[]>(demoCheckInHistory);
-  const [riskOverride, setRiskOverride] = useState<'green' | 'amber' | 'red' | null>(null);
-  const [stylistMode, setStylistMode] = useState(false);
-  const [salonVisits, setSalonVisits] = useState<SalonVisit[]>(demoSalonVisits);
-  const [clientObservations, setClientObservations] = useState<ClientObservation[]>(demoClientObservations);
-  const [stylistLocations, setStylistLocations] = useState<StylistLocation[]>(defaultStylistLocations);
-  const [healthProfile, setHealthProfile] = useState<HealthProfileData>(defaultHealthProfile);
-  const [baselinePhotos, setBaselinePhotos] = useState<BaselinePhoto[]>([]);
-  const [baselineRisk, setBaselineRisk] = useState<'green' | 'amber' | 'red' | null>(null);
-  const [baselineDate, setBaselineDate] = useState<string | null>(null);
-  const [quickLogs, setQuickLogs] = useState<QuickLogEntry[]>([]);
-  const [research, setResearch] = useState<ResearchData>({ consented: false, consentDate: null, photoCount: 0, dismissed: false });
-  const [checkInCount, setCheckInCount] = useState(3);
-  const [progressiveDismissed, setProgressiveDismissed] = useState<Record<string, boolean>>({});
+  const saved = loadState();
 
-  const addSalonVisit = (v: SalonVisit) => setSalonVisits(prev => [v, ...prev]);
-  const addClientObservation = (o: ClientObservation) => setClientObservations(prev => [o, ...prev]);
-  const addQuickLog = (entry: QuickLogEntry) => setQuickLogs(prev => [entry, ...prev]);
-  const addStylistLocation = (loc: StylistLocation) => setStylistLocations(prev => [...prev, loc]);
-  const removeStylistLocation = (id: string) => setStylistLocations(prev => prev.filter(l => l.id !== id));
-  const incrementResearchPhotos = () => setResearch(prev => ({ ...prev, photoCount: prev.photoCount + 1 }));
-  const addToCheckInHistory = (c: CheckInData) => setCheckInHistory(prev => [c, ...prev]);
+  // ── Auth user,pulled from Supabase session ───────────────
+  const [user, setUser] = useState<AppUser | null>(null);
+
+  useEffect(() => {
+    // Get current session on mount
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser({
+          id: session.user.id,
+          email: session.user.email,
+          name:
+            session.user.user_metadata?.full_name ||
+            session.user.user_metadata?.name ||
+            session.user.email?.split('@')[0] ||
+            'User',
+        });
+      }
+    });
+
+    // Keep user in sync with auth state changes (login / logout)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (session?.user) {
+          setUser({
+            id: session.user.id,
+            email: session.user.email,
+            name:
+              session.user.user_metadata?.full_name ||
+              session.user.user_metadata?.name ||
+              session.user.email?.split('@')[0] ||
+              'User',
+          });
+        } else {
+          setUser(null);
+        }
+      },
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ── Routine last-updated timestamp ────────────────────────
+  const [routineLastUpdated, setRoutineLastUpdated] = useState<number>(
+    saved?.routineLastUpdated || Date.now(),
+  );
+
+  // ── Existing state ────────────────────────────────────────
+  const [userName, setUserName]                           = useState<string>(saved?.userName || '');
+  const [onboardingComplete, setOnboardingComplete]       = useState<boolean>(saved?.onboardingComplete || false);
+  const [onboardingData, setOnboardingData]               = useState<OnboardingData>(saved?.onboardingData || defaultOnboarding);
+  const [currentCheckIn, setCurrentCheckIn]               = useState<CheckInData | null>(saved?.currentCheckIn || null);
+  const [checkInHistory, setCheckInHistory]               = useState<CheckInData[]>(saved?.checkInHistory || demoCheckInHistory);
+  const [riskOverride, setRiskOverride]                   = useState<'green' | 'amber' | 'red' | null>(saved?.riskOverride || null);
+  const [stylistMode, setStylistMode]                     = useState<boolean>(saved?.stylistMode || false);
+  const [salonVisits, setSalonVisits]                     = useState<SalonVisit[]>(saved?.salonVisits || demoSalonVisits);
+  const [clientObservations, setClientObservations]       = useState<ClientObservation[]>(saved?.clientObservations || demoClientObservations);
+  const [stylistLocations, setStylistLocations]           = useState<StylistLocation[]>(saved?.stylistLocations || defaultStylistLocations);
+  const [healthProfile, setHealthProfile]                 = useState<HealthProfileData>(saved?.healthProfile || defaultHealthProfile);
+  const [baselinePhotos, setBaselinePhotos]               = useState<BaselinePhoto[]>(saved?.baselinePhotos || []);
+  const [baselineRisk, setBaselineRisk]                   = useState<'green' | 'amber' | 'red' | null>(saved?.baselineRisk || null);
+  const [baselineDate, setBaselineDate]                   = useState<string | null>(saved?.baselineDate || null);
+  const [quickLogs, setQuickLogs]                         = useState<QuickLogEntry[]>(saved?.quickLogs || []);
+  const [research, setResearch]                           = useState<ResearchData>(saved?.research || { consented: false, consentDate: null, photoCount: 0, dismissed: false });
+  const [checkInCount, setCheckInCount]                   = useState<number>(saved?.checkInCount ?? 0);
+  const [progressiveDismissed, setProgressiveDismissed]   = useState<Record<string, boolean>>(saved?.progressiveDismissed || {});
+
+  // Persist to localStorage
+  useEffect(() => {
+    saveState({
+      userName, onboardingComplete, onboardingData, currentCheckIn,
+      checkInHistory, riskOverride, stylistMode, salonVisits,
+      clientObservations, stylistLocations, healthProfile,
+      baselinePhotos, baselineRisk, baselineDate,
+      quickLogs, research, checkInCount, progressiveDismissed,
+      routineLastUpdated,
+    });
+  }, [
+    userName, onboardingComplete, onboardingData, currentCheckIn,
+    checkInHistory, riskOverride, stylistMode, salonVisits,
+    clientObservations, stylistLocations, healthProfile,
+    baselinePhotos, baselineRisk, baselineDate,
+    quickLogs, research, checkInCount, progressiveDismissed,
+    routineLastUpdated,
+  ]);
+
+  const addSalonVisit            = (v: SalonVisit) => setSalonVisits(prev => [v, ...prev]);
+  const addClientObservation     = (o: ClientObservation) => setClientObservations(prev => [o, ...prev]);
+  const addQuickLog              = (entry: QuickLogEntry) => setQuickLogs(prev => [entry, ...prev]);
+  const addStylistLocation       = (loc: StylistLocation) => setStylistLocations(prev => [...prev, loc]);
+  const removeStylistLocation    = (id: string) => setStylistLocations(prev => prev.filter(l => l.id !== id));
+  const incrementResearchPhotos  = () => setResearch(prev => ({ ...prev, photoCount: prev.photoCount + 1 }));
+  const addToCheckInHistory      = (c: CheckInData) => setCheckInHistory(prev => [c, ...prev]);
   const dismissProgressivePrompt = (key: string) => setProgressiveDismissed(prev => ({ ...prev, [key]: true }));
 
   const resetAll = () => {
-    setUserName('');
-    setOnboardingComplete(false);
-    setOnboardingData(defaultOnboarding);
-    setCurrentCheckIn(null);
-    setCheckInHistory([]);
-    setRiskOverride(null);
-    setStylistMode(false);
-    setSalonVisits(demoSalonVisits);
-    setClientObservations(demoClientObservations);
-    setStylistLocations(defaultStylistLocations);
-    setHealthProfile(defaultHealthProfile);
-    setBaselinePhotos([]);
-    setBaselineRisk(null);
-    setBaselineDate(null);
-    setQuickLogs([]);
+    setUserName(''); setOnboardingComplete(false); setOnboardingData(defaultOnboarding);
+    setCurrentCheckIn(null); setCheckInHistory([]); setRiskOverride(null); setStylistMode(false);
+    setSalonVisits(demoSalonVisits); setClientObservations(demoClientObservations);
+    setStylistLocations(defaultStylistLocations); setHealthProfile(defaultHealthProfile);
+    setBaselinePhotos([]); setBaselineRisk(null); setBaselineDate(null); setQuickLogs([]);
     setResearch({ consented: false, consentDate: null, photoCount: 0, dismissed: false });
-    setCheckInCount(0);
-    setProgressiveDismissed({});
+    setCheckInCount(0); setProgressiveDismissed({});
+    setRoutineLastUpdated(Date.now());
+    localStorage.removeItem(STORAGE_KEY);
   };
 
   return (
     <AppContext.Provider value={{
+      user,
+      routineLastUpdated,
+      setRoutineLastUpdated,
       userName, setUserName,
       onboardingComplete, setOnboardingComplete,
       onboardingData, setOnboardingData,

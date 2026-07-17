@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   User, ChevronRight, Shield, Trash2, Leaf, Heart, Camera, RefreshCw, Target, Check,
-  Microscope, Eye, EyeOff, Lock, Sparkles, Pencil, ChevronDown, Droplets, Scissors, FlaskConical, Activity, Info
+  Eye, EyeOff, Lock, Sparkles, Pencil, ChevronDown, Droplets, Scissors, FlaskConical, Activity, Info,
+  CalendarDays, X,
 } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import ProductSearch from '@/components/ProductSearch';
@@ -11,91 +12,69 @@ import { supabase } from '@/lib/supabaseClient';
 import { toast } from '@/hooks/use-toast';
 import { Switch } from '@/components/ui/switch';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { NotificationSettings } from '@/components/NotificationPrompt';
+
+const dm       = "'DM Sans', sans-serif";
+const playfair = "'Playfair Display', serif";
+
+// ─── DARK THEME,green accent, matches RoutineTracker ───────────────────────
+const C = {
+  bg:         '#0A0908',
+  surface:    '#16120D',
+  card:       '#1C1814',
+  ink:        '#F5EFE6',
+  goldSolid:  '#8FB29E',
+  goldDeep:   '#6FA283',
+  gold08:     'rgba(143,178,158,0.08)',
+  gold15:     'rgba(143,178,158,0.15)',
+  goldBorder: 'rgba(143,178,158,0.28)',
+  mid:        'rgba(245,239,230,0.08)',
+  muted:      'rgba(245,239,230,0.40)',
+  warm:       'rgba(245,239,230,0.65)',
+  white:      '#FFFFFF',
+  red:        '#C0604040',
+  redSolid:   '#C47070',
+};
+
+const parseCycleLengthToDays = (raw: string): number => {
+  if (!raw) return 28;
+  const n = raw.match(/\d+/g);
+  if (!n) return 28;
+  if (n.length >= 2) return Math.round(((parseInt(n[0]) + parseInt(n[1])) / 2) * 7);
+  return parseInt(n[0]) * 7;
+};
 
 const mapStyles = (styles: string[] = []) => {
   const map: Record<string, string> = {
-    'Braids': 'braids',
-    'Locs': 'locs',
-    'Twists': 'twists',
-    'Twist out': 'twist_out',
-    'Wig': 'wig',
-    'Weave': 'weave',
-    'Silk press': 'silk_press',
-    'Blow out': 'blow_out',
+    'Braids': 'braids', 'Locs': 'locs', 'Twists': 'twists',
+    'Twist out': 'twist_out', 'Wig': 'wig', 'Weave': 'weave',
+    'Silk press': 'silk_press', 'Blow out': 'blow_out',
   };
-
   return styles.map(s => map[s] || s.toLowerCase());
-};
-
-const C = {
-  bg:         '#FAF8F5',
-  surface:    '#F5F0EB',
-  ink:        '#1C1C1C',
-  gold:       '#D4A866',
-  goldDeep:   '#B8893E',
-  gold10:     'rgba(212,168,102,0.10)',
-  goldBorder: 'rgba(212,168,102,0.22)',
-  mid:        '#EBEBEB',
-  muted:      '#999999',
-  warm:       '#666666',
-  white:      '#FFFFFF',
 };
 
 const saveConsumerProfile = async (data: any) => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
-
     if (!user) throw new Error('User not authenticated');
-
     const payload = {
       user_id: user.id,
-
-      gender:
-        data.gender === 'woman' ? 'female' :
-        data.gender === 'man' ? 'male' :
-        'prefer_not_to_say',
-
-      hair_texture:
-        data.hairType?.startsWith('4')
-          ? 'coily'
-          : data.hairType?.startsWith('3')
-          ? 'curly'
-          : 'not_sure',
-
-      current_styles: mapStyles(data.current_styles ||  []), 
-
+      gender: data.gender === 'woman' ? 'female' : data.gender === 'man' ? 'male' : 'prefer_not_to_say',
+      hair_texture: data.hairType?.startsWith('4') ? 'coily' : data.hairType?.startsWith('3') ? 'curly' : 'not_sure',
+      current_styles: mapStyles(data.current_styles || []),
       protective_style_frequency: data.protectiveStyleFrequency || null,
       style_duration: data.styleDuration || null,
-
       between_wash_care: data.betweenWashCare || [],
       between_wash_other: data.otherBetweenWashCare || null,
-
       top_concerns: data.goals || [],
-
-      chemical_processing:
-        data.chemicalProcessing === 'No, fully natural'
-          ? 'no_fully_natural'
-          : data.chemicalProcessing === 'Yes'
-          ? 'yes_currently'
-          : data.chemicalProcessing === 'Previously'
-          ? 'previously_growing_out'
-          : 'not_sure',
+      chemical_processing: data.chemicalProcessing === 'No, fully natural' ? 'no_fully_natural' : data.chemicalProcessing === 'Yes' ? 'yes_currently' : data.chemicalProcessing === 'Previously' ? 'previously_growing_out' : 'not_sure',
     };
-
-    const { error } = await supabase
-      .from('consumer_profiles')
-      .upsert(payload, { onConflict: 'user_id' });
-
+    const { error } = await supabase.from('consumer_profiles').upsert(payload, { onConflict: 'user_id' });
     if (error) throw error;
-
     toast({ title: 'Profile saved' });
-
   } catch (err) {
     console.error(err);
-    toast({
-      title: 'Error saving profile',
-      variant: 'destructive',
-    });
+    toast({ title: 'Error saving profile', variant: 'destructive' });
   }
 };
 
@@ -111,52 +90,51 @@ const goalOptions = [
 ];
 
 const hairTypeLabels: Record<string, string> = {
-  'type3': 'Type 3, Curly',
-  'type4': 'Type 4, Coily',
-  '3b': '3b, Wide, springy curls',
-  '3c': '3c, Tight, corkscrew curls',
-  '4a': '4a, Soft, defined coils',
-  '4b': '4b, Z-shaped, tightly coiled',
-  '4c': '4c, Very tight, densely packed coils',
-  'unsure': 'Not sure yet',
+  'type3': 'Type 3, Curly', 'type4': 'Type 4, Coily',
+  '3b': '3b, Wide, springy curls', '3c': '3c, Tight, corkscrew curls',
+  '4a': '4a, Soft, defined coils', '4b': '4b, Z-shaped, tightly coiled',
+  '4c': '4c, Very tight, densely packed coils', 'unsure': 'Not sure yet',
 };
 
-
+// ─── Section component ────────────────────────────────────────────────────────
 const ProfileSection = ({
-  title, icon: Icon, children, defaultOpen = false, editLabel, onEdit, editing, onSave, onCancel
+  title, icon: Icon, children, defaultOpen = false,
+  editLabel, onEdit, editing, onSave, onCancel,
 }: {
   title: string; icon: any; children: React.ReactNode; defaultOpen?: boolean;
   editLabel?: string; onEdit?: () => void; editing?: boolean; onSave?: () => void; onCancel?: () => void;
 }) => {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="mb-4">
-      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between py-3 px-1">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center flex-shrink-0">
-            <Icon size={16} className="text-primary" strokeWidth={1.8} />
+    <div style={{ marginBottom: 10 }}>
+      <button onClick={() => setOpen(!open)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', background: C.card, border: `1.5px solid ${C.mid}`, borderRadius: open ? '16px 16px 0 0' : 16, cursor: 'pointer', transition: 'border-radius 0.2s', borderBottom: open ? `1.5px solid ${C.goldBorder}` : `1.5px solid ${C.mid}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: C.gold08, border: `1px solid ${C.goldBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon size={15} color={C.goldDeep} strokeWidth={1.8} />
           </div>
-          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+          <span style={{ fontFamily: dm, fontSize: 13, fontWeight: 700, color: C.ink }}>{title}</span>
         </div>
-        <ChevronDown size={16} className={`text-muted-foreground transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown size={15} color={C.muted} style={{ transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }} />
       </button>
       <AnimatePresence>
         {open && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
-            {onEdit && !editing && (
-              <div className="flex justify-end mb-2">
-                <button onClick={onEdit} className="text-xs font-medium text-primary flex items-center gap-1">
-                  <Pencil size={11} /> {editLabel || 'Edit'}
-                </button>
-              </div>
-            )}
-            {editing && onSave && onCancel && (
-              <div className="flex justify-end gap-2 mb-2">
-                <button onClick={onCancel} className="text-xs font-medium text-muted-foreground">Cancel</button>
-                <button onClick={onSave} className="text-xs font-medium text-primary">Save</button>
-              </div>
-            )}
-            <div className="card-elevated">{children}</div>
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} style={{ overflow: 'hidden' }}>
+            <div style={{ background: C.card, border: `1.5px solid ${C.mid}`, borderTop: 'none', borderRadius: '0 0 16px 16px' }}>
+              {onEdit && !editing && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px 18px 0' }}>
+                  <button onClick={onEdit} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', fontFamily: dm, fontSize: 11, fontWeight: 700, color: C.goldDeep }}>
+                    <Pencil size={11} /> {editLabel || 'Edit'}
+                  </button>
+                </div>
+              )}
+              {editing && onSave && onCancel && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, padding: '10px 18px 0' }}>
+                  <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: dm, fontSize: 11, fontWeight: 600, color: C.muted }}>Cancel</button>
+                  <button onClick={onSave} style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: dm, fontSize: 11, fontWeight: 700, color: C.goldDeep }}>Save</button>
+                </div>
+              )}
+              {children}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -165,12 +143,19 @@ const ProfileSection = ({
 };
 
 const InfoRow = ({ label, value }: { label: string; value: string }) => (
-  <div className="flex items-start justify-between py-3 px-4 gap-3">
-    <span className="text-sm text-muted-foreground flex-shrink-0">{label}</span>
-    <span className="text-sm text-foreground text-right max-w-[200px]">{value}</span>
+  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '12px 18px', borderBottom: `1px solid ${C.mid}`, gap: 12 }}>
+    <span style={{ fontFamily: dm, fontSize: 12, color: C.muted, flexShrink: 0 }}>{label}</span>
+    <span style={{ fontFamily: dm, fontSize: 12, color: C.ink, textAlign: 'right', maxWidth: 200 }}>{value}</span>
   </div>
 );
 
+const SectionLabel = ({ children }: { children: React.ReactNode }) => (
+  <div style={{ padding: '14px 18px 6px' }}>
+    <span style={{ fontFamily: dm, fontSize: 9, fontWeight: 700, color: C.muted, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{children}</span>
+  </div>
+);
+
+// ─── Main page ────────────────────────────────────────────────────────────────
 const ProfilePage = () => {
   const navigate = useNavigate();
   const {
@@ -179,90 +164,113 @@ const ProfilePage = () => {
     healthProfile, research, setResearch,
   } = useApp();
 
-  const [notifications, setNotifications] = useState({
-    dailyTip: true, midCycle: true, washDay: true, washApproaching: true, productReminders: false, weeklySummary: false,
-  });
-  const [showGoalEditor, setShowGoalEditor] = useState(false);
-  const [editGoals, setEditGoals] = useState<string[]>(onboardingData.goals || []);
-  const [showProductEditor, setShowProductEditor] = useState(false);
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showGoalEditor, setShowGoalEditor]         = useState(false);
+  const [editGoals, setEditGoals]                   = useState<string[]>(onboardingData.goals || []);
+  const [showProductEditor, setShowProductEditor]   = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm]   = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showCurrentPw, setShowCurrentPw] = useState(false);
-  const [showNewPw, setShowNewPw] = useState(false);
-  const [showConfirmPw, setShowConfirmPw] = useState(false);
-  const [showResearchExplainer, setShowResearchExplainer] = useState(false);
-  const [preferredStylist, setPreferredStylist] = useState('');
-  const [preferredSalon, setPreferredSalon] = useState('');
-  const [bookingMethod, setBookingMethod] = useState('');
-  const [salonContact, setSalonContact] = useState('');
+  const [currentPassword, setCurrentPassword]       = useState('');
+  const [newPassword, setNewPassword]               = useState('');
+  const [confirmPassword, setConfirmPassword]       = useState('');
+  const [showCurrentPw, setShowCurrentPw]           = useState(false);
+  const [showNewPw, setShowNewPw]                   = useState(false);
+  const [showConfirmPw, setShowConfirmPw]           = useState(false);
+  const [preferredStylist, setPreferredStylist]     = useState('');
+  const [preferredSalon, setPreferredSalon]         = useState('');
+  const [bookingMethod, setBookingMethod]           = useState('');
+  const [salonContact, setSalonContact]             = useState('');
+
+  // ── Delete account state ──
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
+  // ── Takedown reminder state ──
+  const [styleStartDate, setStyleStartDate] = useState<string | null>(null);
+  const [styleDueDate, setStyleDueDate]     = useState<string | null>(null);
 
   const isMale = onboardingData.gender === 'man';
 
-  const notificationOptions = isMale ? [
-    { key: 'dailyTip' as const, label: 'Daily scalp care tip', desc: 'A quick tip to help your scalp health between check-ins' },
-    { key: 'midCycle' as const, label: 'Check-in reminder', desc: "We'll nudge you when it's time for your next scalp check" },
-    { key: 'washDay' as const, label: 'Wash day reminder', desc: "A heads-up when it's time to wash" },
-    { key: 'productReminders' as const, label: 'Product reminders', desc: 'Reminders to apply scalp treatments based on your routine' },
-    { key: 'weeklySummary' as const, label: 'Weekly scalp health summary', desc: 'A quick recap of your scalp activity this week' },
-  ] : [
-    { key: 'dailyTip' as const, label: 'Daily scalp care tip', desc: 'A quick tip or reminder to help your scalp health between check-ins' },
-    { key: 'midCycle' as const, label: 'Mid-cycle check-in reminder', desc: "We'll nudge you when it's time for your quick check" },
-    { key: 'washDay' as const, label: 'Wash day reminder', desc: "A heads-up when your wash day is approaching" },
-    { key: 'washApproaching' as const, label: 'Wash day approaching (2 days before)', desc: 'Reminder 2 days before your expected wash day' },
-    { key: 'productReminders' as const, label: 'Product reminders', desc: 'Reminders to apply scalp treatments or oils based on your routine' },
-    { key: 'weeklySummary' as const, label: 'Weekly scalp health summary', desc: 'A quick recap of your scalp activity this week' },
-  ];
+  useEffect(() => {
+    const loadTakedown = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) return;
+        const uid = session.user.id;
+        const { data: cp } = await supabase.from('consumer_profiles')
+          .select('current_style_start_date, style_due_date')
+          .eq('user_id', uid).maybeSingle();
+        if (cp?.current_style_start_date) setStyleStartDate(cp.current_style_start_date);
+        if (cp?.style_due_date) setStyleDueDate(cp.style_due_date);
+        if (!cp?.current_style_start_date) {
+          const { data: p } = await supabase.from('profiles')
+            .select('current_style_start_date').eq('id', uid).maybeSingle();
+          if (p?.current_style_start_date) setStyleStartDate(p.current_style_start_date);
+        }
+      } catch (e) { console.error('[Profile] takedown load failed:', e); }
+    };
+    loadTakedown();
+  }, []);
 
-  const handleDelete = () => { resetAll(); navigate('/'); };
+  const totalDays    = parseCycleLengthToDays(onboardingData.cycleLength);
+  const styleStartMs = styleStartDate ? new Date(styleStartDate).getTime() : null;
+  const dueDate = styleDueDate
+    ? new Date(styleDueDate)
+    : styleStartMs ? new Date(styleStartMs + totalDays * 86400000) : null;
+  const daysUntilDue = dueDate ? Math.ceil((dueDate.getTime() - Date.now()) / 86400000) : null;
+  const takedownColor = daysUntilDue === null ? C.muted
+    : daysUntilDue < 0 ? C.redSolid
+    : daysUntilDue <= 5 ? '#B8724F'
+    : C.goldSolid;
+  const takedownLabel =
+    daysUntilDue === null ? 'Not set'
+    : daysUntilDue < 0    ? `${Math.abs(daysUntilDue)} day${Math.abs(daysUntilDue) !== 1 ? 's' : ''} overdue`
+    : daysUntilDue === 0  ? 'Due today'
+    : `Due in ${daysUntilDue} day${daysUntilDue !== 1 ? 's' : ''}`;
+
+  // ── Real account deletion (client-side scope) ──
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText !== 'DELETE') return;
+    setDeleting(true);
+    try {
+      // One call: the Edge Function removes storage files, then deletes the
+      // auth user — every app table (checkins, photos, profiles, routine,
+      // style_cycles, chat_memory...) cascades from that automatically.
+      const { error } = await supabase.functions.invoke('delete-account');
+      if (error) throw error;
+
+      // User no longer exists server-side; signOut just clears the local
+      // session and may error harmlessly — ignore it.
+      await supabase.auth.signOut().catch(() => {});
+      resetAll();
+      navigate('/goodbye', { state: { accountDeleted: true } });
+    } catch (e) {
+      console.error('[Delete] failed:', e);
+      toast({ title: 'Something went wrong deleting your account', variant: 'destructive' });
+    } finally {
+      setDeleting(false);
+      setShowDeleteModal(false);
+      setDeleteConfirmText('');
+    }
+  };
+
   const handleRetakePhoto = async (area: string) => {
     const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
     const updatedPhotos = baselinePhotos.map(p => p.area === area ? { ...p, date: today } : p);
-      setBaselinePhotos(updatedPhotos);
+    setBaselinePhotos(updatedPhotos);
+    const { data: { user } } = await supabase.auth.getUser();
+    await supabase.from('consumer_profiles').upsert([{ user_id: user?.id, baseline_photos: updatedPhotos }], { onConflict: 'user_id' });
+  };
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    const userId = user?.id;
-
-    const { error } = await supabase
-    .from('consumer_profiles')
-    .upsert(
-    [{ user_id: userId, baseline_photos: updatedPhotos }],
-    { onConflict: 'user_id' }
-    );
-
-    if (error) {
-      console.error('Failed to save updated baseline photo:', error);
-  }
-   }
-  const handleAddBaseline = async() => {
+  const handleAddBaseline = async () => {
     const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
     const newPhotos = [
       { area: 'Hairline, temples and edges', captured: true, date: today },
       { area: 'Crown and vertex', captured: true, date: today },
     ];
     setBaselinePhotos(newPhotos);
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    const userId = user?.id;
-
-   const { error } = await supabase
-  .from('consumer_profiles')
-  .upsert(
-    [{ user_id: userId, baseline_photos: newPhotos }],
-    { onConflict: 'user_id' }
-  );
-
-if (error) {
-  console.error('Save failed:', error);
-}
+    const { data: { user } } = await supabase.auth.getUser();
+    await supabase.from('consumer_profiles').upsert([{ user_id: user?.id, baseline_photos: newPhotos }], { onConflict: 'user_id' });
   };
 
   const toggleEditGoal = (g: string) => {
@@ -272,14 +280,13 @@ if (error) {
       return [...prev, g];
     });
   };
+
   const saveGoals = async () => {
-  const updated = { ...onboardingData, goals: editGoals };
-
-  setOnboardingData(updated);
-  setShowGoalEditor(false);
-
-  await saveConsumerProfile(updated);
-};
+    const updated = { ...onboardingData, goals: editGoals };
+    setOnboardingData(updated);
+    setShowGoalEditor(false);
+    await saveConsumerProfile(updated);
+  };
 
   const toggleMenstrualTracking = () => {
     const newVal = onboardingData.menstrualTracking === "Yes, I'd like to track" ? 'No thanks' : "Yes, I'd like to track";
@@ -287,11 +294,11 @@ if (error) {
   };
 
   const hpSections = [
-    { key: 'scalp', complete: !!(healthProfile.sweat && healthProfile.exercise && healthProfile.heatStyling && healthProfile.satinCovering) },
+    { key: 'scalp',   complete: !!(healthProfile.sweat && healthProfile.exercise && healthProfile.heatStyling && healthProfile.satinCovering) },
     { key: 'medical', complete: !!(healthProfile.medicalConditions.length > 0 && healthProfile.pregnancyStatus && healthProfile.medications) },
-    { key: 'blood', complete: !!healthProfile.lastBloodTest },
-    { key: 'skin', complete: !!(healthProfile.skinConditions.length > 0 && healthProfile.sensitiveSkin) },
-    { key: 'hair', complete: !!(healthProfile.previousHairLoss && healthProfile.diagnosedCondition && healthProfile.familyHistory) },
+    { key: 'blood',   complete: !!healthProfile.lastBloodTest },
+    { key: 'skin',    complete: !!(healthProfile.skinConditions.length > 0 && healthProfile.sensitiveSkin) },
+    { key: 'hair',    complete: !!(healthProfile.previousHairLoss && healthProfile.diagnosedCondition && healthProfile.familyHistory) },
   ];
   const hpCompleted = hpSections.filter(s => s.complete).length;
 
@@ -310,173 +317,166 @@ if (error) {
     : 'Not set';
 
   const riskColor = (r: string | null) => {
-    if (r === 'green') return 'text-emerald-600';
-    if (r === 'amber') return 'text-amber-600';
-    if (r === 'red') return 'text-red-600';
-    return 'text-muted-foreground';
+    if (r === 'green') return '#8FB29E';
+    if (r === 'amber') return '#B8724F';
+    if (r === 'red')   return '#C47070';
+    return C.muted;
+  };
+
+  const inputStyle = {
+    width: '100%', height: 42, padding: '0 12px',
+    borderRadius: 10, border: `1.5px solid rgba(255,255,255,0.10)`,
+    background: 'rgba(255,255,255,0.05)', color: C.ink,
+    fontFamily: dm, fontSize: 13, outline: 'none',
+    boxSizing: 'border-box' as const,
   };
 
   return (
-    <div className="page-container pt-6 pb-32">
+    <div style={{ minHeight: '100vh', background: C.bg, paddingBottom: 120, fontFamily: dm }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@500;600&display=swap');
+        input::placeholder { color: rgba(245,239,230,0.25); font-family: 'DM Sans', sans-serif; }
+        input:-webkit-autofill { -webkit-box-shadow: 0 0 0 1000px #16120D inset !important; -webkit-text-fill-color: #F5EFE6 !important; }
+      `}</style>
+
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
-        {/* Header */}
-        <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 rounded-full bg-accent flex items-center justify-center mb-3">
-            <User size={28} className="text-muted-foreground" strokeWidth={1.5} />
+
+        {/* Hero,matches RoutineTracker hero treatment */}
+        <div style={{ background: `radial-gradient(ellipse 160% 120% at 50% -10%, rgba(143,178,158,0.10) 0%, transparent 55%), linear-gradient(180deg, #16120D 0%, #0A0908 100%)`, padding: '52px 24px 32px', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', top: -40, right: -40, width: 180, height: 180, borderRadius: '50%', background: 'radial-gradient(circle, rgba(143,178,158,0.12) 0%, transparent 70%)', pointerEvents: 'none' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, position: 'relative', zIndex: 1 }}>
+            <div style={{ width: 56, height: 56, borderRadius: '50%', flexShrink: 0, background: 'rgba(143,178,158,0.12)', border: '1.5px solid rgba(143,178,158,0.30)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <User size={24} color="rgba(143,178,158,0.80)" strokeWidth={1.5} />
+            </div>
+            <div>
+              <p style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: 'rgba(143,178,158,0.85)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 4 }}>Your Profile</p>
+              <h1 style={{ fontFamily: playfair, fontSize: 22, fontWeight: 500, color: C.ink, margin: 0 }}>{userName || 'Welcome'}</h1>
+              {onboardingData.gender && (
+                <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: '3px 0 0' }}>
+                  {onboardingData.gender === 'woman' ? 'Female' : onboardingData.gender === 'man' ? 'Male' : 'Prefer not to say'}
+                </p>
+              )}
+            </div>
           </div>
-          <h1 className="text-2xl font-semibold">{userName || 'Your profile'}</h1>
-          {onboardingData.gender && (
-            <p className="text-sm text-muted-foreground mt-0.5">
-              {onboardingData.gender === 'woman' ? 'Female' : onboardingData.gender === 'man' ? 'Male' : 'Prefer not to say'}
-            </p>
-          )}
         </div>
 
-         { /*  Section 1: Account  */}
-        <ProfileSection title="Account" icon={User} defaultOpen={true}>
-          <div className="divide-y divide-border">
-            <InfoRow label="First name" value={userName || 'Not set'} />
-            <InfoRow label="Gender" value={onboardingData.gender === 'woman' ? 'Female' : onboardingData.gender === 'man' ? 'Male' : onboardingData.gender === 'prefer-not-to-say' ? 'Prefer not to say' : 'Not set'} />
+        <div style={{ padding: '16px 16px 0' }}>
 
-            {/* Notifications */}
-            <div className="px-4 py-3">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Notifications</p>
-              <div className="space-y-3">
-                {notificationOptions.map(item => (
-                  <div key={item.key} className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground">{item.label}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
-                    </div>
-                    <button onClick={() => setNotifications(prev => ({ ...prev, [item.key]: !prev[item.key] }))} className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 mt-0.5 ${notifications[item.key] ? 'bg-primary' : 'bg-border'}`}>
-                      <div className={`w-5 h-5 rounded-full bg-card shadow-sm absolute top-0.5 transition-transform ${notifications[item.key] ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
-                    </button>
-                  </div>
-                ))}
-              </div>
+          {/* ── Account ── */}
+          <ProfileSection title="Account" icon={User} defaultOpen>
+            <InfoRow label="First name" value={userName || 'Not set'} />
+            <InfoRow label="Gender" value={
+              onboardingData.gender === 'woman' ? 'Female' :
+              onboardingData.gender === 'man' ? 'Male' :
+              onboardingData.gender === 'prefer-not-to-say' ? 'Prefer not to say' : 'Not set'
+            } />
+
+            <SectionLabel>Notifications</SectionLabel>
+            <div style={{ padding: '0 18px 18px' }}>
+              <NotificationSettings />
             </div>
 
-            {/* Data & Research */}
-            <div className="px-4 py-3">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Data & Research</p>
-              <div className="flex items-start justify-between gap-3 mb-2">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground">Contribute my anonymised data to scalp health research</p>
-                </div>
+            <SectionLabel>Data & Research</SectionLabel>
+            <div style={{ padding: '0 18px 14px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+                <p style={{ fontFamily: dm, fontSize: 12, fontWeight: 600, color: C.ink, flex: 1, margin: 0 }}>
+                  Contribute my anonymised data to scalp health research
+                </p>
                 <Switch
                   checked={research.consented}
                   onCheckedChange={(checked) => setResearch({
-                    ...research,
-                    consented: checked,
+                    ...research, consented: checked,
                     consentDate: checked ? new Date().toISOString() : null,
                   })}
                 />
               </div>
               <Collapsible>
-                <CollapsibleTrigger className="flex items-center gap-1 text-xs font-medium text-primary mb-2">
-                  <Info size={12} /> Learn more
+                <CollapsibleTrigger style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', fontFamily: dm, fontSize: 11, fontWeight: 700, color: C.goldDeep, marginBottom: 6 }}>
+                  <Info size={11} /> Learn more
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <p className="text-xs text-muted-foreground leading-relaxed mb-2">
-                    Your anonymised check-in patterns help improve scalp health understanding for {isMale ? 'people' : 'women'} with textured hair, a group underrepresented in dermatology research. No photos or personal details are shared without your explicit consent.
+                  <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, lineHeight: 1.55, margin: 0 }}>
+                    Your anonymised check-in patterns help improve scalp health understanding for {isMale ? 'people' : 'women'} with textured hair. No photos or personal details are shared without your explicit consent.
                   </p>
                 </CollapsibleContent>
               </Collapsible>
               {research.consented && research.photoCount > 0 && (
-                <p className="text-xs text-primary font-medium">You've contributed {research.photoCount} photo{research.photoCount !== 1 ? 's' : ''}.</p>
+                <p style={{ fontFamily: dm, fontSize: 11, fontWeight: 700, color: C.goldDeep, margin: 0 }}>
+                  You've contributed {research.photoCount} photo{research.photoCount !== 1 ? 's' : ''}.
+                </p>
               )}
             </div>
 
-            {/* Privacy & Data */}
-            <div className="px-4 py-3">
-              <div className="flex items-start gap-3 mb-3">
-                <Shield size={18} className="text-primary mt-0.5 flex-shrink-0" strokeWidth={1.5} />
+            <div style={{ padding: '12px 18px', borderTop: `1px solid ${C.mid}` }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                <Shield size={16} color={C.goldDeep} strokeWidth={1.5} style={{ flexShrink: 0, marginTop: 1 }} />
                 <div>
-                  <p className="text-sm text-foreground font-medium mb-1">How we use your information</p>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
+                  <p style={{ fontFamily: dm, fontSize: 12, fontWeight: 600, color: C.ink, margin: '0 0 4px' }}>How we use your information</p>
+                  <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, lineHeight: 1.55, margin: 0 }}>
                     Your data personalises your experience and generates your clinician summary if needed. Nothing is shared without permission. Photos stay on your device.
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* Actions */}
-            <button onClick={() => toast({ title: 'Coming soon', description: 'Data export will be available in a future update.' })} className="w-full px-4 py-3 text-left text-sm text-foreground flex items-center justify-between">
-              Export my data <ChevronRight size={16} className="text-muted-foreground" />
+            <button onClick={() => toast({ title: 'Coming soon', description: 'Data export will be available in a future update.' })} style={{ width: '100%', padding: '13px 18px', background: 'none', border: 'none', borderTop: `1px solid ${C.mid}`, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: dm, fontSize: 12, color: C.ink }}>
+              Export my data <ChevronRight size={14} color={C.muted} />
             </button>
-            <button onClick={() => setShowChangePassword(!showChangePassword)} className="w-full px-4 py-3 text-left text-sm text-foreground flex items-center gap-2">
-              <Lock size={14} strokeWidth={1.5} /> Change password <ChevronRight size={14} className="text-muted-foreground ml-auto" />
+
+            <button onClick={() => setShowChangePassword(!showChangePassword)} style={{ width: '100%', padding: '13px 18px', background: 'none', border: 'none', borderTop: `1px solid ${C.mid}`, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8, fontFamily: dm, fontSize: 12, color: C.ink }}>
+              <Lock size={13} strokeWidth={1.5} color={C.muted} /> Change password
+              <ChevronRight size={13} color={C.muted} style={{ marginLeft: 'auto' }} />
             </button>
             {showChangePassword && (
-              <div className="px-4 py-3 space-y-3">
-                <div className="relative">
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Current password</label>
-                  <input type={showCurrentPw ? 'text' : 'password'} value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} className="w-full h-10 px-3 pr-10 rounded-lg border border-border bg-card text-foreground text-sm focus:outline-none focus:border-primary" />
-                  <button type="button" onClick={() => setShowCurrentPw(!showCurrentPw)} className="absolute right-3 top-7 text-muted-foreground">{showCurrentPw ? <EyeOff size={16} /> : <Eye size={16} />}</button>
-                </div>
-                <div className="relative">
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">New password</label>
-                  <input type={showNewPw ? 'text' : 'password'} value={newPassword} onChange={e => setNewPassword(e.target.value)} className="w-full h-10 px-3 pr-10 rounded-lg border border-border bg-card text-foreground text-sm focus:outline-none focus:border-primary" />
-                  <button type="button" onClick={() => setShowNewPw(!showNewPw)} className="absolute right-3 top-7 text-muted-foreground">{showNewPw ? <EyeOff size={16} /> : <Eye size={16} />}</button>
-                </div>
-                <div className="relative">
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Confirm new password</label>
-                  <input type={showConfirmPw ? 'text' : 'password'} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="w-full h-10 px-3 pr-10 rounded-lg border border-border bg-card text-foreground text-sm focus:outline-none focus:border-primary" />
-                  <button type="button" onClick={() => setShowConfirmPw(!showConfirmPw)} className="absolute right-3 top-7 text-muted-foreground">{showConfirmPw ? <EyeOff size={16} /> : <Eye size={16} />}</button>
-                </div>
+              <div style={{ padding: '12px 18px', borderTop: `1px solid ${C.mid}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {[
+                  { label: 'Current password',     val: currentPassword, set: setCurrentPassword, show: showCurrentPw, toggle: () => setShowCurrentPw(!showCurrentPw) },
+                  { label: 'New password',          val: newPassword,     set: setNewPassword,     show: showNewPw,     toggle: () => setShowNewPw(!showNewPw) },
+                  { label: 'Confirm new password',  val: confirmPassword, set: setConfirmPassword, show: showConfirmPw, toggle: () => setShowConfirmPw(!showConfirmPw) },
+                ].map(field => (
+                  <div key={field.label} style={{ position: 'relative' }}>
+                    <label style={{ fontFamily: dm, fontSize: 10, fontWeight: 600, color: C.muted, display: 'block', marginBottom: 4 }}>{field.label}</label>
+                    <input type={field.show ? 'text' : 'password'} value={field.val} onChange={e => field.set(e.target.value)} style={{ ...inputStyle, paddingRight: 36 }} />
+                    <button type="button" onClick={field.toggle} style={{ position: 'absolute', right: 10, bottom: 11, background: 'none', border: 'none', cursor: 'pointer', color: C.muted }}>
+                      {field.show ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                ))}
                 <button
-                  onClick={async () => {   
+                  onClick={async () => {
                     if (!currentPassword || !newPassword || !confirmPassword || newPassword !== confirmPassword) return;
-
                     try {
-                 
-                      // Update password with Supabase
-
-          const { error } = await supabase.auth.updateUser({ password: newPassword });
-            if (error) throw error;
-              toast({ title: 'Password updated successfully' }); 
-
-                    // Clear form and close editor
-                  setCurrentPassword('');
-                  setNewPassword('');
-                  setConfirmPassword('');
-                  setShowChangePassword(false);
-                  } catch (err) {
-                    console.error('Failed to update password:', err);
-                    toast({ title: 'Error updating password', description: 'Try again later.', variant: 'destructive' });
-                  }
-                 }}
+                      const { error } = await supabase.auth.updateUser({ password: newPassword });
+                      if (error) throw error;
+                      toast({ title: 'Password updated successfully' });
+                      setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setShowChangePassword(false);
+                    } catch {
+                      toast({ title: 'Error updating password', description: 'Try again later.', variant: 'destructive' });
+                    }
+                  }}
                   disabled={!currentPassword || !newPassword || !confirmPassword || newPassword !== confirmPassword}
-                  className={`w-full h-10 rounded-xl font-medium text-sm transition-colors ${currentPassword && newPassword && confirmPassword && newPassword === confirmPassword ? 'bg-primary text-primary-foreground' : 'bg-border text-muted-foreground cursor-not-allowed'}`}
-              >
+                  style={{ height: 42, borderRadius: 10, border: 'none', cursor: 'pointer', fontFamily: dm, fontSize: 13, fontWeight: 700, background: (currentPassword && newPassword && confirmPassword && newPassword === confirmPassword) ? C.goldSolid : 'rgba(255,255,255,0.08)', color: (currentPassword && newPassword && confirmPassword && newPassword === confirmPassword) ? '#0A0908' : C.muted, transition: 'background 0.18s' }}>
                   Update password
                 </button>
               </div>
             )}
-            <button onClick={handleDelete} className="w-full px-4 py-3 text-left text-sm text-destructive flex items-center gap-2"><Trash2 size={14} strokeWidth={1.5} /> Delete all data</button>
-          </div>
-        </ProfileSection>
 
-        {/* Your Hair  */}
-        <ProfileSection title="Your Hair" icon={Scissors}>
-          <div className="divide-y divide-border">
+            <button onClick={() => setShowDeleteModal(true)} style={{ width: '100%', padding: '13px 18px', background: 'none', border: 'none', borderTop: `1px solid ${C.mid}`, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8, fontFamily: dm, fontSize: 12, color: C.redSolid, borderRadius: '0 0 16px 16px' }}>
+              <Trash2 size={13} strokeWidth={1.5} /> Delete my account & data
+            </button>
+          </ProfileSection>
+
+          {/* ── Your Hair ── */}
+          <ProfileSection title="Your Hair" icon={Scissors}>
             <InfoRow label="Hair type" value={hairTypeLabels[onboardingData.hairType] || onboardingData.hairType || 'Not set'} />
             <InfoRow label="How you wear your hair" value={onboardingData.protectiveStyles?.length > 0 ? onboardingData.protectiveStyles.join(', ') : 'Not set'} />
-            {!isMale && onboardingData.protectiveStyleFrequency && (
-              <InfoRow label="How often in protective styles" value={onboardingData.protectiveStyleFrequency} />
-            )}
-            {isMale && onboardingData.maleStyleFrequency && (
-              <InfoRow label="Style frequency" value={onboardingData.maleStyleFrequency} />
-            )}
-            {isMale && onboardingData.barberFrequency && (
-              <InfoRow label="Barber frequency" value={onboardingData.barberFrequency} />
-            )}
-          </div>
-        </ProfileSection>
+            {!isMale && onboardingData.protectiveStyleFrequency && <InfoRow label="How often in protective styles" value={onboardingData.protectiveStyleFrequency} />}
+            {isMale && onboardingData.barberFrequency && <InfoRow label="Barber frequency" value={onboardingData.barberFrequency} />}
+            <div style={{ height: 4 }} />
+          </ProfileSection>
 
-        {/* Hair History  */}
-        <ProfileSection title="Hair History" icon={FlaskConical}>
-          <div className="divide-y divide-border">
+          {/* ── Hair History ── */}
+          <ProfileSection title="Hair History" icon={FlaskConical}>
             <InfoRow label="Chemical processing" value={chemDisplay} />
             {onboardingData.chemicalProcessing && !['No, fully natural', 'Never', 'Not sure'].includes(onboardingData.chemicalProcessing) && onboardingData.lastChemicalTreatment && (
               <InfoRow label="Last treatment" value={onboardingData.lastChemicalTreatment} />
@@ -484,280 +484,283 @@ if (error) {
             {onboardingData.chemicalProcessingMultiple?.length > 0 && (
               <InfoRow label="Type" value={onboardingData.chemicalProcessingMultiple.join(', ')} />
             )}
-          </div>
-        </ProfileSection>
+            <div style={{ height: 4 }} />
+          </ProfileSection>
 
-        {/* Your Routine */}
-        <ProfileSection
-          title="Your Routine"
-          icon={Droplets}
-          editLabel={showProductEditor ? 'Done' : 'Edit products'}
-          onEdit={() => setShowProductEditor(true)}
-          editing={showProductEditor}
-          onSave={() => setShowProductEditor(false)}
-          onCancel={() => setShowProductEditor(false)}
-        >
-          <div className="divide-y divide-border">
-            {onboardingData.cycleLength && (
-              <InfoRow label="Typical cycle length" value={onboardingData.cycleLength} />
-            )}
+          {/* ── Your Routine ── */}
+          <ProfileSection title="Your Routine" icon={Droplets} editLabel={showProductEditor ? 'Done' : 'Edit products'} onEdit={() => setShowProductEditor(true)} editing={showProductEditor} onSave={() => setShowProductEditor(false)} onCancel={() => setShowProductEditor(false)}>
+
+            {/* ── Takedown reminder ── */}
+            <button onClick={() => navigate('/routine-tracker')} style={{ width: '100%', padding: '14px 18px', background: 'none', border: 'none', borderBottom: `1px solid ${C.mid}`, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: C.gold08, border: `1px solid ${C.goldBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <CalendarDays size={15} color={takedownColor} strokeWidth={1.8} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontFamily: dm, fontSize: 12, fontWeight: 700, color: C.ink, margin: 0 }}>Takedown reminder</p>
+                <p style={{ fontFamily: dm, fontSize: 11, fontWeight: 700, color: takedownColor, margin: '2px 0 0' }}>{takedownLabel}</p>
+              </div>
+              <ChevronRight size={14} color={C.muted} />
+            </button>
+
+            {onboardingData.cycleLength && <InfoRow label="Typical cycle length" value={onboardingData.cycleLength} />}
             <InfoRow label="Wash frequency" value={onboardingData.washFrequency || onboardingData.wornOutWashFrequency || onboardingData.washFrequencyPerCycle || 'Not set'} />
-            {isMale && onboardingData.locRetwistFrequency && (
-              <InfoRow label="Loc retwist frequency" value={onboardingData.locRetwistFrequency} />
-            )}
-            {onboardingData.betweenWashCare?.length > 0 && (
-              <InfoRow label="Between-wash care" value={betweenWashDisplay} />
-            )}
-          </div>
-
-          {/* Products sub-section */}
-          <div className="border-t border-border">
+            {onboardingData.betweenWashCare?.length > 0 && <InfoRow label="Between-wash care" value={betweenWashDisplay} />}
             {!showProductEditor ? (
-              <div className="divide-y divide-border">
-                <div className="py-3 px-4">
-                  <p className="text-xs text-muted-foreground mb-1">Scalp products</p>
-                  <p className="text-sm text-foreground">
-                    {onboardingData.scalpProducts.filter(p => p !== 'None' && p !== "I don't use anything specific").length > 0
-                      ? onboardingData.scalpProducts.filter(p => p !== 'None' && p !== "I don't use anything specific").join(', ')
-                      : 'No scalp products'}
-                  </p>
-                  {onboardingData.scalpProductFrequency && (
-                    <p className="text-xs text-muted-foreground mt-1">Frequency: {onboardingData.scalpProductFrequency}</p>
-                  )}
+              <>
+                <div style={{ padding: '12px 18px', borderTop: `1px solid ${C.mid}` }}>
+                  <p style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>Scalp products</p>
+                  <p style={{ fontFamily: dm, fontSize: 12, color: C.ink, margin: 0 }}>{onboardingData.scalpProducts?.filter(p => p !== 'None').length > 0 ? onboardingData.scalpProducts.filter(p => p !== 'None').join(', ') : 'No scalp products'}</p>
                 </div>
-                <div className="py-3 px-4">
-                  <p className="text-xs text-muted-foreground mb-1">Hair products</p>
-                  <p className="text-sm text-foreground">
-                    {onboardingData.hairProducts.filter(p => p !== 'None' && p !== "I don't use anything specific").length > 0
-                      ? onboardingData.hairProducts.filter(p => p !== 'None' && p !== "I don't use anything specific").join(', ')
-                      : 'No hair products'}
-                  </p>
-                  {onboardingData.hairProductFrequency && (
-                    <p className="text-xs text-muted-foreground mt-1">Frequency: {onboardingData.hairProductFrequency}</p>
-                  )}
+                <div style={{ padding: '12px 18px', borderTop: `1px solid ${C.mid}` }}>
+                  <p style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>Hair products</p>
+                  <p style={{ fontFamily: dm, fontSize: 12, color: C.ink, margin: 0 }}>{onboardingData.hairProducts?.filter(p => p !== 'None').length > 0 ? onboardingData.hairProducts.filter(p => p !== 'None').join(', ') : 'No hair products'}</p>
                 </div>
-              </div>
+              </>
             ) : (
-              <div className="p-4 space-y-6">
+              <div style={{ padding: '14px 18px', borderTop: `1px solid ${C.mid}`, display: 'flex', flexDirection: 'column', gap: 20 }}>
                 <div>
-                  <p className="text-sm font-medium text-foreground mb-2">Scalp products</p>
-                  <ProductSearch
-                    category="scalp"
-                    selectedProducts={onboardingData.scalpProducts.filter(p => p !== 'None')}
-                    onProductsChange={(prods) =>{
-                       setOnboardingData({ ...onboardingData, scalpProducts: prods });
-                  }}
-                  />
+                  <p style={{ fontFamily: dm, fontSize: 12, fontWeight: 600, color: C.ink, margin: '0 0 8px' }}>Scalp products</p>
+                  <ProductSearch category="scalp" selectedProducts={onboardingData.scalpProducts?.filter(p => p !== 'None') || []} onProductsChange={(prods) => setOnboardingData({ ...onboardingData, scalpProducts: prods })} darkMode />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-foreground mb-2">Hair products</p>
-                  <ProductSearch
-                    category="hair"
-                    selectedProducts={onboardingData.hairProducts.filter(p => p !== 'None')}
-                    onProductsChange={ async (prods) => {
-                       const updatedData= { ...onboardingData, hairProducts: prods };
-                        setOnboardingData(updatedData);
-                      
-                    }}
-                  />
+                  <p style={{ fontFamily: dm, fontSize: 12, fontWeight: 600, color: C.ink, margin: '0 0 8px' }}>Hair products</p>
+                  <ProductSearch category="hair" selectedProducts={onboardingData.hairProducts?.filter(p => p !== 'None') || []} onProductsChange={(prods) => setOnboardingData({ ...onboardingData, hairProducts: prods })} darkMode />
                 </div>
               </div>
             )}
-            <div className="px-4 pb-3">
-              <button onClick={() => navigate('/products')} className="text-sm font-medium text-primary">Browse product guide →</button>
+            <div style={{ padding: '12px 18px', borderTop: `1px solid ${C.mid}` }}>
+              <button onClick={() => navigate('/products')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: dm, fontSize: 12, fontWeight: 700, color: C.goldDeep }}>Browse product guide →</button>
             </div>
-          </div>
-        </ProfileSection>
+          </ProfileSection>
 
-        {/* Your Stylist  */}
-
-        <ProfileSection title="Your Stylist" icon={Scissors}>
-          <div className="divide-y divide-border">
-            <div className="px-4 py-3">
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Preferred stylist name (optional)</label>
-              <input type="text" value={preferredStylist} onChange={e => setPreferredStylist(e.target.value)} placeholder="e.g. Ama" className="w-full h-10 px-3 rounded-lg border border-border bg-card text-foreground text-sm focus:outline-none focus:border-primary" />
-            </div>
-            <div className="px-4 py-3">
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Salon name (optional)</label>
-              <input type="text" value={preferredSalon} onChange={e => setPreferredSalon(e.target.value)} placeholder="e.g. Natural Touch Studio" className="w-full h-10 px-3 rounded-lg border border-border bg-card text-foreground text-sm focus:outline-none focus:border-primary" />
-            </div>
-            <div className="px-4 py-3">
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">How do you usually book?</label>
-              <div className="flex flex-wrap gap-2 mt-1">
+          {/* ── Your Stylist ── */}
+          <ProfileSection title="Your Stylist" icon={Scissors}>
+            {[
+              { label: 'Preferred stylist name (optional)', val: preferredStylist, set: setPreferredStylist, ph: 'e.g. Ama' },
+              { label: 'Salon name (optional)', val: preferredSalon, set: setPreferredSalon, ph: 'e.g. Natural Touch Studio' },
+              { label: 'Salon phone or booking link (optional)', val: salonContact, set: setSalonContact, ph: 'Phone number or URL' },
+            ].map((field, i) => (
+              <div key={field.label} style={{ padding: '12px 18px', borderTop: i === 0 ? 'none' : `1px solid ${C.mid}` }}>
+                <label style={{ fontFamily: dm, fontSize: 10, fontWeight: 600, color: C.muted, display: 'block', marginBottom: 6 }}>{field.label}</label>
+                <input type="text" value={field.val} onChange={e => field.set(e.target.value)} placeholder={field.ph} style={inputStyle} />
+              </div>
+            ))}
+            <div style={{ padding: '12px 18px', borderTop: `1px solid ${C.mid}` }}>
+              <label style={{ fontFamily: dm, fontSize: 10, fontWeight: 600, color: C.muted, display: 'block', marginBottom: 8 }}>How do you usually book?</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {['Fresha', 'Booksy', 'Instagram DM', 'WhatsApp', 'Phone call', 'Other'].map(m => (
-                  <button key={m} onClick={() => setBookingMethod(m)} className={`pill-option ${bookingMethod === m ? 'selected' : ''}`}>{m}</button>
+                  <button key={m} onClick={() => setBookingMethod(m)} style={{ padding: '6px 14px', borderRadius: 100, fontFamily: dm, fontSize: 11, fontWeight: 600, border: bookingMethod === m ? `1.5px solid ${C.goldBorder}` : `1.5px solid ${C.mid}`, background: bookingMethod === m ? C.gold08 : 'rgba(255,255,255,0.03)', color: bookingMethod === m ? C.goldDeep : C.warm, cursor: 'pointer', transition: 'all 0.15s' }}>{m}</button>
                 ))}
               </div>
             </div>
-            <div className="px-4 py-3">
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Salon phone or booking link (optional)</label>
-              <input type="text" value={salonContact} onChange={e => setSalonContact(e.target.value)} placeholder="Phone number or URL" className="w-full h-10 px-3 rounded-lg border border-border bg-card text-foreground text-sm focus:outline-none focus:border-primary" />
-            </div>
-          </div>
-        </ProfileSection>
+            <div style={{ height: 4 }} />
+          </ProfileSection>
 
-        {/* Health */}
-        <ProfileSection title="Health" icon={Activity}>
-          <div className="divide-y divide-border">
-
-            {/* Baseline */}
-            <div className="px-4 py-3">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Baseline Assessment</p>
-              <div className="space-y-1">
-                <div className="flex justify-between text-sm"><span className="text-muted-foreground">Date</span><span className="text-foreground">{baselineDate || 'Not set'}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-muted-foreground">Itch</span><span className="text-foreground">{onboardingData.baselineItch || 'Not set'}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-muted-foreground">Tenderness</span><span className="text-foreground">{onboardingData.baselineTenderness || 'Not set'}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-muted-foreground">Hairline</span><span className="text-foreground">{onboardingData.baselineHairline || 'Not set'}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-muted-foreground">Hair health</span><span className="text-foreground">{onboardingData.baselineHairHealth || 'Not set'}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-muted-foreground">Risk level</span><span className={`font-medium capitalize ${riskColor(baselineRisk)}`}>{baselineRisk || 'Not assessed'}</span></div>
+          {/* ── Health ── */}
+          <ProfileSection title="Health" icon={Activity}>
+            <SectionLabel>Baseline Assessment</SectionLabel>
+            <div style={{ padding: '0 18px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {[
+                { label: 'Date',        val: baselineDate || 'Not set' },
+                { label: 'Itch',        val: onboardingData.baselineItch || 'Not set' },
+                { label: 'Tenderness',  val: onboardingData.baselineTenderness || 'Not set' },
+                { label: 'Hairline',    val: onboardingData.baselineHairline || 'Not set' },
+                { label: 'Hair health', val: onboardingData.baselineHairHealth || 'Not set' },
+              ].map(row => (
+                <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontFamily: dm, fontSize: 12, color: C.muted }}>{row.label}</span>
+                  <span style={{ fontFamily: dm, fontSize: 12, color: C.ink }}>{row.val}</span>
+                </div>
+              ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontFamily: dm, fontSize: 12, color: C.muted }}>Risk level</span>
+                <span style={{ fontFamily: dm, fontSize: 12, fontWeight: 700, color: riskColor(baselineRisk), textTransform: 'capitalize' }}>{baselineRisk || 'Not assessed'}</span>
               </div>
             </div>
 
-            {/* Baseline Photos */}
-            <div className="px-4 py-3">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Baseline Photos</p>
+            <SectionLabel>Baseline Photos</SectionLabel>
+            <div style={{ padding: '0 18px 14px' }}>
               {baselinePhotos.length > 0 ? (
-                <div className="space-y-2">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {baselinePhotos.map(photo => (
-                    <div key={photo.area} className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-accent flex items-center justify-center flex-shrink-0"><Camera size={16} className="text-muted-foreground" strokeWidth={1.5} /></div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">{photo.area}</p>
-                        <p className="text-xs text-muted-foreground">Captured {photo.date}</p>
+                    <div key={photo.area} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ width: 38, height: 38, borderRadius: 10, background: C.gold08, border: `1px solid ${C.goldBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Camera size={15} color={C.goldDeep} strokeWidth={1.5} />
                       </div>
-                      <button onClick={() => handleRetakePhoto(photo.area)} className="flex items-center gap-1 text-xs font-medium text-primary"><RefreshCw size={11} strokeWidth={2} /> Retake</button>
+                      <div style={{ flex: 1 }}>
+                        <p style={{ fontFamily: dm, fontSize: 12, fontWeight: 600, color: C.ink, margin: 0 }}>{photo.area}</p>
+                        <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: 0 }}>Captured {photo.date}</p>
+                      </div>
+                      <button onClick={() => handleRetakePhoto(photo.area)} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', fontFamily: dm, fontSize: 11, fontWeight: 700, color: C.goldDeep }}>
+                        <RefreshCw size={11} strokeWidth={2} /> Retake
+                      </button>
                     </div>
                   ))}
                 </div>
               ) : (
-                <button onClick={handleAddBaseline} className="w-full p-3 rounded-xl border-2 border-dashed border-border flex items-center gap-3 text-left">
-                  <Camera size={18} className="text-muted-foreground" strokeWidth={1.5} />
+                <button onClick={handleAddBaseline} style={{ width: '100%', padding: 14, borderRadius: 12, border: `1.5px dashed ${C.goldBorder}`, background: C.gold08, display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', textAlign: 'left', boxSizing: 'border-box' as const }}>
+                  <Camera size={18} color={C.goldDeep} strokeWidth={1.5} />
                   <div>
-                    <p className="font-medium text-foreground text-sm">Add baseline photos</p>
-                    <p className="text-xs text-muted-foreground">Capture your starting point</p>
+                    <p style={{ fontFamily: dm, fontSize: 12, fontWeight: 700, color: C.ink, margin: 0 }}>Add baseline photos</p>
+                    <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: 0 }}>Capture your starting point</p>
                   </div>
                 </button>
               )}
             </div>
 
-            {/* Menstrual Cycle (hidden for male) */}
             {!isMale && (
-              <div className="px-4 py-3">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Menstrual Cycle</p>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-muted-foreground">Tracking</span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm text-foreground">{onboardingData.menstrualTracking === "Yes, I'd like to track" ? 'On' : 'Off'}</span>
-                    <button onClick={toggleMenstrualTracking} className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ${onboardingData.menstrualTracking === "Yes, I'd like to track" ? 'bg-primary' : 'bg-border'}`}>
-                      <div className={`w-5 h-5 rounded-full bg-card shadow-sm absolute top-0.5 transition-transform ${onboardingData.menstrualTracking === "Yes, I'd like to track" ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
-                    </button>
+              <>
+                <SectionLabel>Menstrual Cycle</SectionLabel>
+                <div style={{ padding: '0 18px 14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ fontFamily: dm, fontSize: 12, color: C.muted }}>Tracking</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontFamily: dm, fontSize: 12, color: C.ink }}>{onboardingData.menstrualTracking === "Yes, I'd like to track" ? 'On' : 'Off'}</span>
+                      <button onClick={toggleMenstrualTracking} style={{ width: 42, height: 24, borderRadius: 100, background: onboardingData.menstrualTracking === "Yes, I'd like to track" ? C.goldSolid : 'rgba(255,255,255,0.12)', border: 'none', cursor: 'pointer', position: 'relative', transition: 'background 0.2s' }}>
+                        <div style={{ width: 18, height: 18, borderRadius: '50%', background: C.white, position: 'absolute', top: 3, left: onboardingData.menstrualTracking === "Yes, I'd like to track" ? 21 : 3, transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }} />
+                      </button>
+                    </div>
                   </div>
                 </div>
-                {onboardingData.menstrualTracking === "Yes, I'd like to track" && (
-                  <div className="space-y-1">
-                    {onboardingData.menstrualCycleLength && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Cycle length</span><span className="text-foreground">{onboardingData.menstrualCycleLength}</span></div>}
-                    {onboardingData.lastPeriodDate && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Last period</span><span className="text-foreground">{onboardingData.lastPeriodDate}</span></div>}
-                    {onboardingData.hormonalContraception && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Contraception</span><span className="text-foreground">{onboardingData.hormonalContraception}</span></div>}
-                  </div>
-                )}
-              </div>
+              </>
             )}
 
-            {/* Health Profile link */}
-            <button onClick={() => navigate('/health-profile')} className="w-full px-4 py-3 flex items-center gap-3 text-left">
-              <Heart size={16} className="text-primary flex-shrink-0" strokeWidth={1.5} />
-              <div className="flex-1">
-                <p className="font-medium text-foreground text-sm">Health Profile, {hpCompleted}/5 complete</p>
-                <p className="text-xs text-muted-foreground">{hpCompleted < 5 ? 'Complete your health profile' : 'Edit health profile'}</p>
+            <button onClick={() => navigate('/health-profile')} style={{ width: '100%', padding: '13px 18px', background: 'none', border: 'none', borderTop: `1px solid ${C.mid}`, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Heart size={15} color={C.goldDeep} strokeWidth={1.5} style={{ flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <p style={{ fontFamily: dm, fontSize: 12, fontWeight: 700, color: C.ink, margin: 0 }}>Health Profile,{hpCompleted}/5 complete</p>
+                <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: 0 }}>{hpCompleted < 5 ? 'Complete your health profile' : 'Edit health profile'}</p>
               </div>
-              <ChevronRight size={16} className="text-muted-foreground" />
+              <ChevronRight size={14} color={C.muted} />
             </button>
 
             {/* Goals */}
-            <div className="px-4 py-3">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Goals</p>
+            <div style={{ padding: '14px 18px', borderTop: `1px solid ${C.mid}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <span style={{ fontFamily: dm, fontSize: 9, fontWeight: 700, color: C.muted, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Goals</span>
                 {!showGoalEditor && (
-                  <button onClick={() => { setEditGoals(onboardingData.goals || []); setShowGoalEditor(true); }} className="text-xs font-medium text-primary flex items-center gap-1">
+                  <button onClick={() => { setEditGoals(onboardingData.goals || []); setShowGoalEditor(true); }} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', fontFamily: dm, fontSize: 11, fontWeight: 700, color: C.goldDeep }}>
                     <Pencil size={11} /> Edit
                   </button>
                 )}
               </div>
               {!showGoalEditor ? (
-                onboardingData.goals.length > 0 ? (
-                  <div className="space-y-1.5">
+                onboardingData.goals?.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {onboardingData.goals.map(g => (
-                      <div key={g} className="flex items-center gap-2">
-                        <Target size={13} className="text-primary flex-shrink-0" strokeWidth={1.8} />
-                        <p className="text-sm text-foreground">{g}</p>
+                      <div key={g} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                        <Target size={12} color={C.goldDeep} strokeWidth={1.8} style={{ flexShrink: 0, marginTop: 2 }} />
+                        <p style={{ fontFamily: dm, fontSize: 12, color: C.ink, margin: 0 }}>{g}</p>
                       </div>
                     ))}
                   </div>
-                ) : <p className="text-sm text-muted-foreground">No goals set yet</p>
+                ) : <p style={{ fontFamily: dm, fontSize: 12, color: C.muted, margin: 0 }}>No goals set yet</p>
               ) : (
                 <div>
-                  <p className="text-sm font-medium text-foreground mb-2">Pick up to 3</p>
-                  <div className="space-y-2 mb-3">
+                  <p style={{ fontFamily: dm, fontSize: 12, fontWeight: 600, color: C.ink, margin: '0 0 10px' }}>Pick up to 3</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
                     {goalOptions.map(g => (
-                      <button key={g} onClick={() => toggleEditGoal(g)} disabled={editGoals.length >= 3 && !editGoals.includes(g)} className={`w-full text-left p-2.5 rounded-xl border-2 transition-colors ${editGoals.includes(g) ? 'border-primary bg-primary/5' : 'border-border'} ${editGoals.length >= 3 && !editGoals.includes(g) ? 'opacity-50' : ''}`}>
-                        <div className="flex items-center gap-2">
-                          <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${editGoals.includes(g) ? 'bg-primary border-primary' : 'border-border'}`}>
-                            {editGoals.includes(g) && <Check size={10} className="text-primary-foreground" strokeWidth={2.5} />}
+                      <button key={g} onClick={() => toggleEditGoal(g)} disabled={editGoals.length >= 3 && !editGoals.includes(g)}
+                        style={{ textAlign: 'left', padding: '10px 12px', borderRadius: 12, cursor: 'pointer', border: editGoals.includes(g) ? `1.5px solid ${C.goldBorder}` : `1.5px solid ${C.mid}`, background: editGoals.includes(g) ? C.gold08 : 'rgba(255,255,255,0.03)', opacity: editGoals.length >= 3 && !editGoals.includes(g) ? 0.5 : 1, transition: 'all 0.15s' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, border: editGoals.includes(g) ? `2px solid ${C.goldSolid}` : `2px solid ${C.mid}`, background: editGoals.includes(g) ? C.goldSolid : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {editGoals.includes(g) && <Check size={9} color="#0A0908" strokeWidth={2.5} />}
                           </div>
-                          <p className="text-sm text-foreground">{g}</p>
+                          <span style={{ fontFamily: dm, fontSize: 12, color: C.ink }}>{g}</span>
                         </div>
                       </button>
                     ))}
                   </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => setShowGoalEditor(false)} className="flex-1 h-9 rounded-xl border border-border font-medium text-sm text-muted-foreground">Cancel</button>
-                    <button onClick={saveGoals} disabled={editGoals.length === 0} className={`flex-1 h-9 rounded-xl font-medium text-sm ${editGoals.length > 0 ? 'bg-primary text-primary-foreground' : 'bg-border text-muted-foreground'}`}>Save</button>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button onClick={() => setShowGoalEditor(false)} style={{ flex: 1, height: 40, borderRadius: 10, border: `1.5px solid ${C.mid}`, background: 'rgba(255,255,255,0.04)', fontFamily: dm, fontSize: 12, fontWeight: 600, color: C.muted, cursor: 'pointer' }}>Cancel</button>
+                    <button onClick={saveGoals} disabled={editGoals.length === 0} style={{ flex: 1, height: 40, borderRadius: 10, border: 'none', background: editGoals.length > 0 ? C.goldSolid : 'rgba(255,255,255,0.08)', fontFamily: dm, fontSize: 12, fontWeight: 700, color: editGoals.length > 0 ? '#0A0908' : C.muted, cursor: editGoals.length > 0 ? 'pointer' : 'not-allowed' }}>Save</button>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* My Routine link */}
-            <button onClick={() => navigate('/my-routine')} className="w-full px-4 py-3 flex items-center gap-3 text-left">
-              <Sparkles size={16} className="text-primary flex-shrink-0" strokeWidth={1.5} />
-              <div className="flex-1">
-                <p className="font-medium text-foreground text-sm">My Routine</p>
-                <p className="text-xs text-muted-foreground">Your personalised scalp care plan</p>
+            <button onClick={() => navigate('/my-routine')} style={{ width: '100%', padding: '13px 18px', background: 'none', border: 'none', borderTop: `1px solid ${C.mid}`, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Sparkles size={15} color={C.goldDeep} strokeWidth={1.5} style={{ flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <p style={{ fontFamily: dm, fontSize: 12, fontWeight: 700, color: C.ink, margin: 0 }}>My Routine</p>
+                <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: 0 }}>Your personalised scalp care plan</p>
               </div>
-              <ChevronRight size={16} className="text-muted-foreground" />
+              <ChevronRight size={14} color={C.muted} />
             </button>
-          </div>
-        </ProfileSection>
+            <div style={{ height: 4 }} />
+          </ProfileSection>
 
-        {/* About */}
-        <div className="mb-6 mt-2">
-          <div className="card-elevated p-4">
-            <div className="flex items-start gap-3">
-              <Leaf size={16} className="text-primary mt-0.5" strokeWidth={1.8} />
+          {/* ── About ── */}
+          <div style={{ background: C.card, border: `1.5px solid ${C.mid}`, borderRadius: 16, padding: 18, marginBottom: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <Leaf size={15} color={C.goldDeep} strokeWidth={1.8} style={{ marginTop: 1 }} />
               <div>
-                <p className="text-sm text-foreground font-medium">FolliSense</p>
-                <p className="text-xs text-muted-foreground mt-1">A symptom-tracking and triage tool. It does not provide medical diagnoses.</p>
-                <p className="text-xs text-muted-foreground mt-2">Version 1.0</p>
+                <p style={{ fontFamily: dm, fontSize: 13, fontWeight: 700, color: C.ink, margin: '0 0 4px' }}>FolliSense</p>
+                <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: '0 0 6px', lineHeight: 1.5 }}>A symptom-tracking and triage tool. It does not provide medical diagnoses.</p>
+                <p style={{ fontFamily: dm, fontSize: 10, color: C.muted, margin: 0 }}>Version 1.0</p>
               </div>
             </div>
           </div>
-        </div>
 
-        {/*  Log out */}
-        <div className="mb-20 flex justify-center">
-          {!showLogoutConfirm ? (
-            <button onClick={() => setShowLogoutConfirm(true)} className="text-sm text-muted-foreground hover:text-foreground transition-colors">Log out</button>
-          ) : (
-            <div className="card-elevated p-5 w-full text-center">
-              <p className="text-sm font-medium text-foreground mb-4">Are you sure you want to log out?</p>
-              <div className="flex gap-3">
-                <button onClick={() => setShowLogoutConfirm(false)} className="flex-1 h-10 rounded-xl border border-border font-medium text-sm text-muted-foreground">Cancel</button>
-                <button onClick={() => { resetAll(); navigate('/'); }} className="flex-1 h-10 rounded-xl font-medium text-sm bg-muted text-foreground">Yes, log out</button>
+          {/* ── Log out ── */}
+          <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 8, paddingBottom: 20 }}>
+            {!showLogoutConfirm ? (
+              <button onClick={() => setShowLogoutConfirm(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: dm, fontSize: 12, color: C.muted }}>Log out</button>
+            ) : (
+              <div style={{ background: C.card, border: `1.5px solid ${C.mid}`, borderRadius: 16, padding: 20, width: '100%', textAlign: 'center' }}>
+                <p style={{ fontFamily: dm, fontSize: 13, fontWeight: 600, color: C.ink, margin: '0 0 16px' }}>Are you sure you want to log out?</p>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => setShowLogoutConfirm(false)} style={{ flex: 1, height: 42, borderRadius: 10, border: `1.5px solid ${C.mid}`, background: 'rgba(255,255,255,0.04)', fontFamily: dm, fontSize: 13, fontWeight: 600, color: C.muted, cursor: 'pointer' }}>Cancel</button>
+                  <button onClick={async () => { await supabase.auth.signOut(); resetAll();navigate('/welcome', { replace: true }); }} style={{ flex: 1, height: 42, borderRadius: 10, border: `1px solid ${C.goldBorder}`, background: 'linear-gradient(135deg, #16261B 0%, #0E1610 100%)', fontFamily: dm, fontSize: 13, fontWeight: 700, color: C.goldSolid, cursor: 'pointer' }}>Yes, log out</button>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </motion.div>
+
+      {/* ── Delete account modal ── */}
+      <AnimatePresence>
+        {showDeleteModal && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 24px' }}>
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              style={{ background: C.surface, border: `1px solid ${C.mid}`, borderRadius: 24, padding: 24, maxWidth: 360, width: '100%' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <h3 style={{ fontFamily: playfair, fontSize: 19, color: C.ink, margin: 0 }}>Delete your account?</h3>
+                <button onClick={() => { setShowDeleteModal(false); setDeleteConfirmText(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                  <X size={18} color={C.muted} strokeWidth={1.8} />
+                </button>
+              </div>
+              <p style={{ fontFamily: dm, fontSize: 13, color: C.warm, lineHeight: 1.6, margin: '0 0 8px' }}>
+                This permanently deletes your check-ins, photos, routine, and profile. It cannot be undone.
+              </p>
+              <p style={{ fontFamily: dm, fontSize: 12, color: C.muted, lineHeight: 1.5, margin: '0 0 16px' }}>
+                Type <span style={{ fontWeight: 700, color: C.redSolid }}>DELETE</span> to confirm.
+              </p>
+              <input
+                type="text"
+                value={deleteConfirmText}
+                onChange={e => setDeleteConfirmText(e.target.value)}
+                placeholder="DELETE"
+                autoFocus
+                style={{ ...inputStyle, marginBottom: 14, borderColor: deleteConfirmText === 'DELETE' ? C.redSolid : 'rgba(255,255,255,0.10)' }}
+              />
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => { setShowDeleteModal(false); setDeleteConfirmText(''); }} style={{ flex: 1, height: 44, borderRadius: 12, border: `1.5px solid ${C.mid}`, background: 'rgba(255,255,255,0.04)', fontFamily: dm, fontSize: 13, fontWeight: 600, color: C.ink, cursor: 'pointer' }}>
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteAccount}
+                  disabled={deleteConfirmText !== 'DELETE' || deleting}
+                  style={{ flex: 1, height: 44, borderRadius: 12, border: 'none', background: deleteConfirmText === 'DELETE' ? C.redSolid : 'rgba(255,255,255,0.08)', fontFamily: dm, fontSize: 13, fontWeight: 700, color: deleteConfirmText === 'DELETE' ? '#0A0908' : C.muted, cursor: deleteConfirmText === 'DELETE' && !deleting ? 'pointer' : 'not-allowed', opacity: deleting ? 0.6 : 1 }}>
+                  {deleting ? 'Deleting…' : 'Delete forever'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

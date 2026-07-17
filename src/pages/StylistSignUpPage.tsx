@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Eye, EyeOff, Shield } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { toast } from '@/hooks/use-toast';
+import { supabase } from '@/lib/supabaseClient';
 
 const StylistSignUpPage = () => {
   const navigate = useNavigate();
@@ -12,15 +13,56 @@ const StylistSignUpPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const canSubmit = firstName.trim().length > 0 && email.trim().length > 0 && password.length >= 6;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSubmit) return;
-    setUserName(firstName.trim());
-    setStylistMode(true);
-    navigate('/stylist/onboarding');
+    if (!canSubmit || isLoading) return;
+
+    setIsLoading(true);
+
+    try {
+      // 1. Create auth account in Supabase
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: {
+          data: { first_name: firstName.trim() },
+        },
+      });
+
+      if (signUpError) throw signUpError;
+
+      // 2. Insert row into profiles table
+      if (data.user) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            id: data.user.id,           // uuid primary key linked to auth
+            role: 'stylist',            // marks this as a stylist account
+            first_name: firstName.trim(),
+            created_at: new Date().toISOString(),
+          });
+
+        if (profileError) throw profileError;
+      }
+
+      // 3. Update local state and go to onboarding
+      setUserName(firstName.trim());
+      setStylistMode(true);
+      navigate('/stylist/onboarding');
+
+    } catch (err: any) {
+      console.error('Stylist sign up error:', err);
+      toast({
+        title: 'Sign up failed',
+        description: err?.message || 'Something went wrong. Please try again.',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -33,7 +75,7 @@ const StylistSignUpPage = () => {
       >
         <div style={{ background: 'rgba(255, 255, 255, 0.75)', backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)', borderRadius: '24px', padding: '28px 52px', border: '1px solid rgba(255, 255, 255, 0.6)', outline: 'none', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}>
 
-          {/* Logo + FolliSense */}
+          {/* Logo */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '4px' }}>
             <img
               src="https://cdn-icons-png.flaticon.com/512/11847/11847144.png"
@@ -60,6 +102,7 @@ const StylistSignUpPage = () => {
                 value={firstName}
                 onChange={e => setFirstName(e.target.value)}
                 placeholder="Your first name"
+                disabled={isLoading}
                 style={{ width: '100%', height: '48px', padding: '0 16px', borderRadius: '12px', border: '1.5px solid rgba(0,0,0,0.15)', backgroundColor: 'rgba(255,255,255,0.9)', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box', fontFamily: "'Montserrat', sans-serif", color: '#1a1a1a' }}
                 autoFocus
               />
@@ -72,11 +115,12 @@ const StylistSignUpPage = () => {
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 placeholder="you@example.com"
+                disabled={isLoading}
                 style={{ width: '100%', height: '48px', padding: '0 16px', borderRadius: '12px', border: '1.5px solid rgba(0,0,0,0.15)', backgroundColor: 'rgba(255,255,255,0.9)', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box', fontFamily: "'Montserrat', sans-serif", color: '#1a1a1a' }}
               />
             </div>
 
-            <div style={{ marginBottom: '16px' }}>
+            <div style={{ marginBottom: '24px' }}>
               <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, color: '#1a1a1a', marginBottom: '6px' }}>Password</label>
               <div style={{ position: 'relative' }}>
                 <input
@@ -84,6 +128,7 @@ const StylistSignUpPage = () => {
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   placeholder="At least 6 characters"
+                  disabled={isLoading}
                   style={{ width: '100%', height: '48px', padding: '0 48px 0 16px', borderRadius: '12px', border: '1.5px solid rgba(0,0,0,0.15)', backgroundColor: 'rgba(255,255,255,0.9)', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box', fontFamily: "'Montserrat', sans-serif", color: '#1a1a1a' }}
                 />
                 <button
@@ -98,10 +143,10 @@ const StylistSignUpPage = () => {
 
             <button
               type="submit"
-              disabled={!canSubmit}
-              style={{ width: '100%', height: '50px', borderRadius: '12px', border: 'none', fontFamily: "'Montserrat', sans-serif", fontWeight: 600, fontSize: '1rem', cursor: canSubmit ? 'pointer' : 'not-allowed', backgroundColor: '#7fa896', color: '#ffffff', transition: 'all 0.2s ease', opacity: canSubmit ? 1 : 0.6 }}
+              disabled={!canSubmit || isLoading}
+              style={{ width: '100%', height: '50px', borderRadius: '12px', border: 'none', fontFamily: "'Montserrat', sans-serif", fontWeight: 600, fontSize: '1rem', cursor: canSubmit && !isLoading ? 'pointer' : 'not-allowed', backgroundColor: '#7fa896', color: '#ffffff', transition: 'all 0.2s ease', opacity: canSubmit && !isLoading ? 1 : 0.6 }}
             >
-              Create stylist account
+              {isLoading ? 'Creating account…' : 'Create stylist account'}
             </button>
           </form>
 
@@ -142,12 +187,16 @@ const StylistSignUpPage = () => {
 
           <p style={{ textAlign: 'center', fontSize: '0.875rem', color: '#6b6b6b' }}>
             Already have a stylist account?{' '}
-            <button onClick={() => navigate('/stylist/login')} style={{ color: '#7fa896', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>Log in</button>
+            <button onClick={() => navigate('/stylist/login')} style={{ color: '#7fa896', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>
+              Log in
+            </button>
           </p>
 
           <p style={{ textAlign: 'center', fontSize: '0.75rem', color: '#9e9e9e', marginTop: '12px' }}>
             Looking for the personal app?{' '}
-            <button onClick={() => navigate('/signup')} style={{ color: '#7fa896', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>Sign up here</button>
+            <button onClick={() => navigate('/signup')} style={{ color: '#7fa896', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>
+              Sign up here
+            </button>
           </p>
 
         </div>

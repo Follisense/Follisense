@@ -3,6 +3,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, X, Camera } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
+import { scoreSymptoms, scoreToRisk, buildNumericPayload, buildCCCAPayload } from '@/utils/symptomScoring';
+import { supabase } from '@/lib/supabaseClient';
+import { updateCheckinSession } from '@/services/checkinService';
 import ProductSearch from '@/components/ProductSearch';
 
 const washDayUsedAcks = new Set<string>();
@@ -139,6 +142,37 @@ const scalpSteps: StepDef[] = [
   },
 ];
 
+// ─── CCCA cluster steps (shown to women + prefer-not-to-say only) ─────────────
+// Center part widening + crown thinning are the early signature of CCCA, a
+// scarring (permanent) alopecia disproportionately affecting Black women.
+// Captured here as ordinary scalp-section steps; scored separately, kept out of
+// the composite total_score. Gated out for men (no part line; crown is already
+// covered by the hairline/Norwood path).
+const cccaStepDefs: StepDef[] = [
+  {
+    key: 'centerPartWidening',
+    q: 'How does your part line look compared to before?',
+    qRegular: 'How does your part line look compared to a few months ago?',
+    options: [
+      { label: 'No change', desc: 'Same as usual' },
+      { label: 'Slightly wider', desc: 'A little wider, hard to be sure' },
+      { label: 'Noticeably wider', desc: 'Clearly wider than before' },
+      { label: 'Much wider', desc: 'Scalp clearly visible along the part' },
+    ],
+  },
+  {
+    key: 'crownThinning',
+    q: 'How does the crown (top-centre) of your scalp look?',
+    qRegular: 'How does the crown look compared to a few months ago?',
+    options: [
+      { label: 'No change', desc: 'Same density as usual' },
+      { label: 'Slightly thinner', desc: 'A little less full' },
+      { label: 'Noticeably thinner', desc: 'Visibly thinner or sparser' },
+      { label: 'See-through at the crown', desc: 'Scalp clearly shows through' },
+    ],
+  },
+];
+
 const hairHealthSteps: StepDef[] = [
   {
     key: 'hairFeel',
@@ -212,7 +246,12 @@ const WashDayAssessment = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const isRegularCheckIn = searchParams.get('mode') === 'regular';
-  const { onboardingData, setCurrentCheckIn, baselinePhotos, research, incrementResearchPhotos, checkInCount, setCheckInCount } = useApp();
+  const {
+    onboardingData, setCurrentCheckIn, baselinePhotos,
+    research, incrementResearchPhotos,
+    // ── REMOVED: checkInCount, setCheckInCount ──
+    // Count is now sourced from Supabase on HomePage mount, not incremented locally
+  } = useApp();
   const [currentStep, setCurrentStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [newProductText, setNewProductText] = useState('');
@@ -222,13 +261,17 @@ const WashDayAssessment = () => {
   const [showHairIntro, setShowHairIntro] = useState(false);
   const [acknowledgment, setAcknowledgment] = useState<string | null>(null);
   const [includeInResearch, setIncludeInResearch] = useState(research.consented);
+  const [isSaving, setIsSaving] = useState(false);
 
   const isMale = onboardingData.gender === 'man';
-  const allSteps = [...scalpSteps, ...hairHealthSteps, productStep];
+  // CCCA questions go to women + prefer-not-to-say; empty for men keeps the
+  // jsonb shape uniform (buildCCCAPayload returns 0/0/none when keys are absent).
+  const cccaSteps: StepDef[] = isMale ? [] : cccaStepDefs;
+  const scalpSection = [...scalpSteps, ...cccaSteps];
+  const allSteps = [...scalpSection, ...hairHealthSteps, productStep];
   const photoAreas = isMale ? photoAreasMale : photoAreasFemale;
   const currentStyle = onboardingData.protectiveStyles[0] || (isMale ? 'your style' : 'Braids');
 
-  // Build context label
   const getContextLabel = (): string => {
     if (isRegularCheckIn) return 'Scalp check-in';
     if (isMale) {
@@ -273,7 +316,7 @@ const WashDayAssessment = () => {
     if (currentQ.key === 'newProducts' && val === 'No, same routine') {
       setAcknowledgment(getAcknowledgment(0, 2));
     } else if (currentQ.key === 'newProducts' && val === 'Yes, I tried something new') {
-      // Stay on step
+      // Stay on step for product follow-up
     } else {
       setAcknowledgment(getAcknowledgment(optIndex, getOptions(currentQ).length));
     }
@@ -295,30 +338,140 @@ const WashDayAssessment = () => {
 
   const handleProductContinue = () => setCurrentStep(allSteps.length);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+
+    // Update local context for results page
     setCurrentCheckIn({
-      itch: answers.itch,
-      tenderness: answers.tenderness,
-      hairline: answers.hairline,
-      flaking: answers.flaking,
-      shedding: answers.shedding,
-      hairFeel: answers.hairFeel,
-      hairBreakage: answers.hairBreakage,
-      hairAppearance: answers.hairAppearance,
-      newProducts: answers.newProducts,
+      itch:              answers.itch,
+      tenderness:        answers.tenderness,
+      hairline:          answers.hairline,
+      flaking:           answers.flaking,
+      shedding:          answers.shedding,
+      hairFeel:          answers.hairFeel,
+      hairBreakage:      answers.hairBreakage,
+      hairAppearance:    answers.hairAppearance,
+      newProducts:       answers.newProducts,
       newProductDetails: newProductsList.length > 0 ? newProductsList.join(', ') : newProductText || undefined,
       type: 'wash-day',
       date: new Date().toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }),
     });
+
     if (photoSaved && includeInResearch && research.consented) incrementResearchPhotos();
-    setCheckInCount(checkInCount + 1);
-    navigate('/results');
+
+    // ── Save to Supabase ──
+    try {
+      const checkinId = sessionStorage.getItem('active-checkin-id');
+      console.log('[WashDay] active-checkin-id from sessionStorage:', checkinId);
+
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      console.log('[WashDay] session user:', session?.user?.id, '| sessionError:', sessionError);
+
+      if (!session?.user) {
+        console.error('[WashDay] No authenticated user,cannot save to Supabase');
+        navigate('/results');
+        return;
+      }
+
+      const scores = scoreSymptoms(answers);
+      // Numeric payload → REAL table columns (this was the missing piece:
+      // scores only lived inside the symptoms jsonb, never in the columns,
+      // so every score column sat at its default of 0)
+      const numeric = buildNumericPayload(answers);
+      // CCCA cluster,scored + flagged separately, NOT folded into total_score.
+      // Returns 0/0/none for men (keys absent), keeping the jsonb shape uniform.
+      const ccca = buildCCCAPayload(answers);
+      const symptomsPayload = {
+        // Text answers
+        itch:              answers.itch           ?? null,
+        tenderness:        answers.tenderness     ?? null,
+        flaking:           answers.flaking        ?? null,
+        irritation:        answers.irritation     ?? null,
+        hairline:          answers.hairline       ?? null,
+        shedding:          answers.shedding       ?? null,
+        hairFeel:          answers.hairFeel       ?? null,
+        hairBreakage:      answers.hairBreakage   ?? null,
+        hairAppearance:    answers.hairAppearance ?? null,
+        newProducts:       answers.newProducts    ?? null,
+        newProductDetails: newProductsList.length > 0 ? newProductsList.join(', ') : newProductText || null,
+        // Numeric scores (0–3) for data analysis
+        itch_score:             scores.itch,
+        tenderness_score:       scores.tenderness,
+        flaking_score:          scores.flaking,
+        irritation_score:       scores.irritation,
+        hairline_score:         scores.hairline,
+        shedding_score:         scores.shedding,
+        hair_feel_score:        scores.hairFeel,
+        hair_breakage_score:    scores.hairBreakage,
+        hair_appearance_score:  scores.hairAppearance,
+        total_score:            scores.total,
+        // risk_level respects the severe-symptom amber floor
+        risk_level:             numeric.risk_level,
+        // CCCA fields (center_part_widening_score, crown_thinning_score, ccca_flag)
+        ...ccca,
+      };
+
+      // Top-level columns: numeric scores + the two CCCA score columns.
+      // NOTE: ccca_flag stays jsonb-only,there's no ccca_flag column.
+      const columnPayload = {
+        ...numeric,
+        center_part_widening_score: ccca.center_part_widening_score,
+        crown_thinning_score:       ccca.crown_thinning_score,
+      };
+
+      if (checkinId) {
+        // Update the row created in ScalpCheckIn
+        const { error } = await supabase
+          .from('checkins')
+          .update({
+            symptoms:      symptomsPayload,
+            ...columnPayload,
+            triage_result: numeric.risk_level,
+            notes:         `Itch: ${answers.itch}, Tenderness: ${answers.tenderness}, Shedding: ${answers.shedding}`,
+          })
+          .eq('id', checkinId);
+
+        if (error) {
+          console.error('[WashDay] update failed:', error);
+        } else {
+          console.log('[WashDay] checkin updated with scores:', checkinId, '| total:', numeric.total_score, '→', numeric.risk_level);
+        }
+      } else {
+        // Fallback: user navigated directly to /wash-day without going through ScalpCheckIn
+        const { data, error } = await supabase
+          .from('checkins')
+          .insert({
+            user_id:       session.user.id,
+            type:          'scheduled',
+            symptoms:      symptomsPayload,
+            ...columnPayload,
+            triage_result: numeric.risk_level,
+            notes:         `Itch: ${answers.itch}, Tenderness: ${answers.tenderness}, Shedding: ${answers.shedding}`,
+            is_baseline:   false,
+          })
+          .select('id')
+          .single();
+
+        if (error) {
+          console.error('[WashDay] fallback insert failed:', error);
+        } else {
+          console.log('[WashDay] fallback insert succeeded:', data?.id, '| total:', numeric.total_score, '→', numeric.risk_level);
+        }
+      }
+
+      sessionStorage.removeItem('active-checkin-id');
+    } catch (err) {
+      console.error('[WashDay] Unexpected Supabase error:', err);
+    } finally {
+      setIsSaving(false);
+      navigate('/results');
+    }
   };
 
   const getBaselineForArea = (baselineLabel: string) => baselinePhotos.find(p => p.area === baselineLabel);
 
-  // Hair intro transition
-  if (currentStep === scalpSteps.length && !showHairIntro && !isPhotoStep) {
+  if (currentStep === scalpSection.length && !showHairIntro && !isPhotoStep) {
     return (
       <div className="min-h-screen bg-background">
         <div className="max-w-[430px] mx-auto px-6">
@@ -365,7 +518,7 @@ const WashDayAssessment = () => {
         <div className="flex items-center justify-between py-4">
           <button onClick={() => {
             if (currentStep > 0) {
-              if (currentStep === scalpSteps.length && showHairIntro) setShowHairIntro(false);
+              if (currentStep === scalpSection.length && showHairIntro) setShowHairIntro(false);
               else setCurrentStep(currentStep - 1);
             } else setShowConfirm(true);
           }} className="p-2 -ml-2">
@@ -403,7 +556,7 @@ const WashDayAssessment = () => {
               {isProductFollowUp && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-6">
                   <label className="text-sm font-medium text-foreground mb-3 block">What new products did you use?</label>
-                  <ProductSearch category="hair" selectedProducts={newProductsList} onProductsChange={setNewProductsList} placeholder="Search products..." />
+                  <ProductSearch category="hair" selectedProducts={newProductsList} onProductsChange={setNewProductsList} />
                   <button onClick={handleProductContinue} className="w-full h-12 mt-4 bg-primary text-primary-foreground rounded-xl font-semibold text-sm btn-press">Continue</button>
                 </motion.div>
               )}
@@ -463,8 +616,17 @@ const WashDayAssessment = () => {
                 </div>
               )}
 
-              <button onClick={handleSubmit} className="w-full h-14 bg-primary text-primary-foreground rounded-xl font-semibold text-base btn-press mb-3">See my results</button>
-              <button onClick={handleSubmit} className="w-full text-center text-sm text-muted-foreground py-2">Skip</button>
+              <button
+                onClick={handleSubmit}
+                disabled={isSaving}
+                className="w-full h-14 bg-primary text-primary-foreground rounded-xl font-semibold text-base btn-press mb-3"
+                style={{ opacity: isSaving ? 0.7 : 1 }}
+              >
+                {isSaving ? 'Saving…' : 'See my results'}
+              </button>
+              <button onClick={handleSubmit} disabled={isSaving} className="w-full text-center text-sm text-muted-foreground py-2">
+                Skip
+              </button>
             </motion.div>
           )}
         </AnimatePresence>

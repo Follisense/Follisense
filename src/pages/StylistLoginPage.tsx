@@ -3,23 +3,60 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
+import { supabase } from '@/lib/supabaseClient';
+import { toast } from '@/hooks/use-toast';
 
 const StylistLoginPage = () => {
   const navigate = useNavigate();
   const { setUserName, setStylistMode } = useApp();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail]               = useState('');
+  const [password, setPassword]         = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading]       = useState(false);
+  const [errorMsg, setErrorMsg]         = useState('');
 
   const canSubmit = email.trim().length > 0 && password.length >= 1;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSubmit) return;
-    const name = email.split('@')[0].replace(/[^a-zA-Z]/g, '');
-    setUserName(name.charAt(0).toUpperCase() + name.slice(1) || 'Stylist');
-    setStylistMode(true);
-    navigate('/stylist');
+    if (!canSubmit || isLoading) return;
+
+    setIsLoading(true);
+    setErrorMsg('');
+
+    try {
+      // 1. Sign in with Supabase auth
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (error) throw error;
+
+      // 2. Fetch their name from the profiles table
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('first_name')
+        .eq('id', data.user.id)
+        .single();
+
+      const name = profile?.first_name || email.split('@')[0];
+      setUserName(name);
+      setStylistMode(true);
+      navigate('/stylist');
+
+    } catch (err: any) {
+      console.error('Stylist login error:', err);
+      // Show a friendly message for wrong password / user not found
+      if (err?.message?.toLowerCase().includes('invalid login credentials') ||
+          err?.message?.toLowerCase().includes('invalid credentials')) {
+        setErrorMsg('Incorrect email or password. Please try again.');
+      } else {
+        setErrorMsg(err?.message || 'Something went wrong. Please try again.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -32,7 +69,7 @@ const StylistLoginPage = () => {
       >
         <div style={{ background: 'rgba(255, 255, 255, 0.18)', backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)', borderRadius: '24px', padding: '28px 52px', border: '1px solid rgba(255, 255, 255, 0.3)', outline: 'none', boxShadow: '0 8px 40px rgba(0,0,0,0.15)' }}>
 
-          {/* Logo + FolliSense */}
+          {/* Logo */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '4px' }}>
             <img
               src="https://cdn-icons-png.flaticon.com/512/11847/11847144.png"
@@ -57,8 +94,9 @@ const StylistLoginPage = () => {
               <input
                 type="email"
                 value={email}
-                onChange={e => setEmail(e.target.value)}
+                onChange={e => { setEmail(e.target.value); setErrorMsg(''); }}
                 placeholder="you@example.com"
+                disabled={isLoading}
                 style={{ width: '100%', height: '48px', padding: '0 16px', borderRadius: '12px', border: '1.5px solid rgba(255,255,255,0.5)', backgroundColor: 'rgba(255,255,255,0.65)', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box', fontFamily: "'Montserrat', sans-serif", color: '#1a1a1a' }}
                 autoFocus
               />
@@ -75,9 +113,10 @@ const StylistLoginPage = () => {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  onChange={e => { setPassword(e.target.value); setErrorMsg(''); }}
                   placeholder="Enter your password"
-                  style={{ width: '100%', height: '48px', padding: '0 48px 0 16px', borderRadius: '12px', border: '1.5px solid rgba(255,255,255,0.5)', backgroundColor: 'rgba(255,255,255,0.65)', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box', fontFamily: "'Montserrat', sans-serif", color: '#1a1a1a' }}
+                  disabled={isLoading}
+                  style={{ width: '100%', height: '48px', padding: '0 48px 0 16px', borderRadius: '12px', border: `1.5px solid ${errorMsg ? 'rgba(220,80,60,0.6)' : 'rgba(255,255,255,0.5)'}`, backgroundColor: 'rgba(255,255,255,0.65)', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box', fontFamily: "'Montserrat', sans-serif", color: '#1a1a1a' }}
                 />
                 <button
                   type="button"
@@ -89,10 +128,21 @@ const StylistLoginPage = () => {
               </div>
             </div>
 
+            {/* Inline error message */}
+            {errorMsg && (
+              <motion.p
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                style={{ fontSize: '0.8rem', color: '#ffb3a7', marginBottom: '12px', marginTop: '6px' }}
+              >
+                {errorMsg}
+              </motion.p>
+            )}
+
             <div style={{ marginBottom: '16px' }}>
               <button
                 type="button"
-                onClick={() => { setEmail('stylist@follisense.app'); setPassword('demo1234'); setUserName('Ama'); setStylistMode(true); navigate('/stylist'); }}
+                onClick={() => { setEmail('stylist@follisense.app'); setPassword('demo1234'); }}
                 style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.55)', background: 'none', border: 'none', cursor: 'pointer' }}
               >
                 Use test account
@@ -101,10 +151,10 @@ const StylistLoginPage = () => {
 
             <button
               type="submit"
-              disabled={!canSubmit}
-              style={{ width: '100%', height: '50px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.4)', fontFamily: "'Montserrat', sans-serif", fontWeight: 600, fontSize: '1rem', cursor: canSubmit ? 'pointer' : 'not-allowed', backgroundColor: 'rgba(220,220,220,0.45)', color: '#ffffff', transition: 'all 0.2s ease', opacity: canSubmit ? 1 : 0.6 }}
+              disabled={!canSubmit || isLoading}
+              style={{ width: '100%', height: '50px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.4)', fontFamily: "'Montserrat', sans-serif", fontWeight: 600, fontSize: '1rem', cursor: canSubmit && !isLoading ? 'pointer' : 'not-allowed', backgroundColor: 'rgba(220,220,220,0.45)', color: '#ffffff', transition: 'all 0.2s ease', opacity: canSubmit && !isLoading ? 1 : 0.6 }}
             >
-              Log in
+              {isLoading ? 'Logging in…' : 'Log in'}
             </button>
           </form>
 
@@ -116,7 +166,7 @@ const StylistLoginPage = () => {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
             <button
-              onClick={() => { setUserName('Ama'); setStylistMode(true); navigate('/stylist'); }}
+              onClick={() => toast({ title: 'Coming soon' })}
               style={{ width: '100%', height: '48px', borderRadius: '12px', border: '1.5px solid rgba(255,255,255,0.4)', backgroundColor: 'rgba(255,255,255,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 500, fontFamily: "'Montserrat', sans-serif", color: '#1a1a1a' }}
             >
               <svg width="18" height="18" viewBox="0 0 24 24">
@@ -128,7 +178,7 @@ const StylistLoginPage = () => {
               Continue with Google
             </button>
             <button
-              onClick={() => { setUserName('Ama'); setStylistMode(true); navigate('/stylist'); }}
+              onClick={() => toast({ title: 'Coming soon' })}
               style={{ width: '100%', height: '48px', borderRadius: '12px', border: '1.5px solid rgba(255,255,255,0.4)', backgroundColor: 'rgba(255,255,255,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 500, fontFamily: "'Montserrat', sans-serif", color: '#1a1a1a' }}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">

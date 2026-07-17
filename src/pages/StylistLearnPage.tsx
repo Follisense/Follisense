@@ -132,7 +132,7 @@ const ConditionDetail = ({ condition, onBack }: { condition: StylistCondition; o
         <div style={{ marginBottom: 20 }}>
           <SectionLabel>Reference photos</SectionLabel>
           <p style={{ fontFamily: dm, fontSize: 11, color: 'var(--color-text-secondary)', marginBottom: 10 }}>
-            Photos on textured hair and darker skin tones — placeholders for now
+            Photos on textured hair and darker skin tones,placeholders for now
           </p>
           <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 12, WebkitOverflowScrolling: 'touch' as any }}>
             {consumerCond.photoGallery.map((photo, i) => (

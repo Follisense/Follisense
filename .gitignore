@@ -22,4 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.envfirebase-sa.json
+supabase/.temp/
+firebase-sa.json
+# Environment variables
 .env
+.env.local
+.env.*
+!.env.example

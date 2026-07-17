@@ -7,9 +7,6 @@ import { supabase } from '@/lib/supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
 import ScalpIllustration from '@/components/ScalpIllustration';
 
-// ---------------------------
-// Helpers
-// ---------------------------
 
 // ✅ Get logged-in user ID
 const getUserId = async (): Promise<string | null> => {
@@ -17,10 +14,6 @@ const getUserId = async (): Promise<string | null> => {
   if (error || !data?.user) return null;
   return data.user.id;
 };
-
-// ---------------------------
-// Local storage state management
-// ---------------------------
 
 interface QuizState {
   totalPoints: number;
@@ -45,10 +38,6 @@ const saveQuizState = (state: QuizState) => {
   localStorage.setItem('follisense-quiz', JSON.stringify(state));
 };
 
-// ---------------------------
-// Utilities
-// ---------------------------
-
 const shuffleArray = <T,>(arr: T[]): T[] => {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -66,9 +55,6 @@ const getMultiplier = (timeLeft: number): { label: string; value: number } => {
   return { label: '1×', value: 1 };
 };
 
-// ---------------------------
-// Component
-// ---------------------------
 
 const ScalpQuiz = () => {
   const navigate = useNavigate();
@@ -76,10 +62,6 @@ const ScalpQuiz = () => {
   const isChallenge = searchParams.get('mode') === 'challenge';
 
   const [quizState, setQuizState] = useState<QuizState>(loadQuizState);
-
-  // ---------------------------
-  // Quiz phase state
-  // ---------------------------
 
   const [phase, setPhase] = useState<'playing' | 'roundSummary'>('playing');
   const [userAttempts, setUserAttempts] = useState<any[]>([]); // previous attempts
@@ -91,10 +73,6 @@ const ScalpQuiz = () => {
   const [roundPoints, setRoundPoints] = useState(0);
   const [hasSaved, setHasSaved] = useState(false);
   const [usedIds, setUsedIds] = useState<Set<number>>(new Set());
-
-  // ---------------------------
-  // Challenge timer
-  // ---------------------------
 
   const [timeLeft, setTimeLeft] = useState(TIMER_DURATION);
   const [answeredMultiplier, setAnsweredMultiplier] = useState<{ label: string; value: number } | null>(null);
@@ -127,10 +105,6 @@ const ScalpQuiz = () => {
     return () => clearTimer();
   }, [phase]);
 
-  // ---------------------------
-  // Question handling
-  // ---------------------------
-
   const pickQuestions = useCallback(
     (currentUsedIds: Set<number>) => {
       const wrong = quizQuestions.filter(q => quizState.wrongQuestionIds.includes(q.id) && !currentUsedIds.has(q.id));
@@ -148,10 +122,6 @@ const ScalpQuiz = () => {
 
   const currentQuestion = roundQuestions[questionIndex];
   const shuffledOptions = useMemo(() => currentQuestion ? shuffleArray(currentQuestion.options) : [], [currentQuestion?.id]);
-
-  // ---------------------------
-  // Answer handling
-  // ---------------------------
 
   const handleAnswer = (answer: string) => {
     if (selectedAnswer) return;
@@ -242,10 +212,6 @@ const ScalpQuiz = () => {
     if (isChallenge) startTimer();
   };
 
-  // ---------------------------
-  // Supabase integration
-  // ---------------------------
-
   const saveQuizAttempt = async (score: number, correct: number, streak: number) => {
     const userId = await getUserId();
     if (!userId) {
@@ -285,10 +251,6 @@ const ScalpQuiz = () => {
     fetchUserAttempts().then((attempts) => setUserAttempts(attempts));
   }, []);
 
-  // ---------------------------
-  // Rendering
-  // ---------------------------
-
   if (!currentQuestion && phase === 'playing') return null;
 
   const question = currentQuestion!;
@@ -297,9 +259,6 @@ const ScalpQuiz = () => {
   const timerPercent = (timeLeft / TIMER_DURATION) * 100;
   const timerColor = timeLeft > 7 ? 'bg-primary' : timeLeft > 4 ? 'bg-[hsl(40,70%,50%)]' : 'bg-destructive';
 
-  // ---------------------------
-  // Round Summary
-  // ---------------------------
 
   if (phase === 'roundSummary') {
     return (
@@ -351,10 +310,6 @@ const ScalpQuiz = () => {
       </div>
     );
   }
-
-  // ---------------------------
-  // Quiz Playing Phase
-  // ---------------------------
 
   return (
     <div className="page-container pt-6 pb-24">
