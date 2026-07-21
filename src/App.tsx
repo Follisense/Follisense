@@ -50,6 +50,7 @@ import PrivacyPolicy from './pages/PrivacyPolicy';
 import Terms from './pages/Terms';
 import GoodbyePage from './pages/GoodbyePage';
 import AuthCallback from '@/pages/AuthCallback';
+import ResetPasswordPage from './pages/ResetPassword';
 
 const queryClient = new QueryClient();
 
@@ -74,7 +75,7 @@ const SessionGuard = ({ children }: { children: React.ReactNode }) => {
         if (!session?.user) {
           // No session,redirect to login unless already on public pages.
           // '/' is the splash screen,always allowed so the splash can play.
-         const publicPages = ['/', '/welcome', '/login', '/signup', '/forgot-password', '/verify-otp', '/stylist/login', '/stylist/signup', '/terms', '/privacy', '/auth/callback', '/goodbye'];
+         const publicPages = ['/', '/welcome', '/login', '/signup', '/forgot-password', '/verify-otp', '/stylist/login', '/stylist/signup', '/terms', '/privacy', '/auth/callback', '/goodbye','/reset-password'];
           if (!publicPages.includes(location.pathname)) {
             navigate('/login');
           }
@@ -199,6 +200,7 @@ const App = () => {
                   <Route path="/goodbye" element={<GoodbyePage />} />
                   <Route path="/auth/callback" element={<AuthCallback />} />
                   <Route path="/privacy" element={<PrivacyPolicy />} />
+                 <Route path="/reset-password" element={<ResetPasswordPage />} /> 
                 </Routes>
               </Layout>
             </SessionGuard>
