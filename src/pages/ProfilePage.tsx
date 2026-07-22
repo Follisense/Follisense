@@ -164,8 +164,16 @@ const ProfilePage = () => {
     healthProfile, research, setResearch,
   } = useApp();
 
+  // Defensive locals: a user who has never opened Health Profile (or whose
+  // Supabase row has null columns) gets undefined here, and reading .length
+  // off undefined crashed the whole page to blank.
+  const hp: any     = healthProfile || {};
+  const res: any    = research || {};
+  const photos: any[] = baselinePhotos || [];
+  const ob: any     = onboardingData || {};
+  
   const [showGoalEditor, setShowGoalEditor]         = useState(false);
-  const [editGoals, setEditGoals]                   = useState<string[]>(onboardingData.goals || []);
+  const [editGoals, setEditGoals]                   = useState<string[]>(ob.goals || []);
   const [showProductEditor, setShowProductEditor]   = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm]   = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
@@ -189,7 +197,7 @@ const ProfilePage = () => {
   const [styleStartDate, setStyleStartDate] = useState<string | null>(null);
   const [styleDueDate, setStyleDueDate]     = useState<string | null>(null);
 
-  const isMale = onboardingData.gender === 'man';
+  const isMale = ob.gender === 'man';
 
   useEffect(() => {
     const loadTakedown = async () => {
@@ -212,7 +220,7 @@ const ProfilePage = () => {
     loadTakedown();
   }, []);
 
-  const totalDays    = parseCycleLengthToDays(onboardingData.cycleLength);
+  const totalDays    = parseCycleLengthToDays(ob.cycleLength);
   const styleStartMs = styleStartDate ? new Date(styleStartDate).getTime() : null;
   const dueDate = styleDueDate
     ? new Date(styleDueDate)
@@ -256,7 +264,7 @@ const ProfilePage = () => {
 
   const handleRetakePhoto = async (area: string) => {
     const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-    const updatedPhotos = baselinePhotos.map(p => p.area === area ? { ...p, date: today } : p);
+    const updatedPhotos = photos.map(p => p.area === area ? { ...p, date: today } : p);
     setBaselinePhotos(updatedPhotos);
     const { data: { user } } = await supabase.auth.getUser();
     await supabase.from('consumer_profiles').upsert([{ user_id: user?.id, baseline_photos: updatedPhotos }], { onConflict: 'user_id' });
@@ -282,38 +290,38 @@ const ProfilePage = () => {
   };
 
   const saveGoals = async () => {
-    const updated = { ...onboardingData, goals: editGoals };
+    const updated = { ...ob, goals: editGoals };
     setOnboardingData(updated);
     setShowGoalEditor(false);
     await saveConsumerProfile(updated);
   };
 
   const toggleMenstrualTracking = () => {
-    const newVal = onboardingData.menstrualTracking === "Yes, I'd like to track" ? 'No thanks' : "Yes, I'd like to track";
-    setOnboardingData({ ...onboardingData, menstrualTracking: newVal });
+    const newVal = ob.menstrualTracking === "Yes, I'd like to track" ? 'No thanks' : "Yes, I'd like to track";
+    setOnboardingData({ ...ob, menstrualTracking: newVal });
   };
 
   const hpSections = [
-    { key: 'scalp',   complete: !!(healthProfile.sweat && healthProfile.exercise && healthProfile.heatStyling && healthProfile.satinCovering) },
-    { key: 'medical', complete: !!(healthProfile.medicalConditions.length > 0 && healthProfile.pregnancyStatus && healthProfile.medications) },
-    { key: 'blood',   complete: !!healthProfile.lastBloodTest },
-    { key: 'skin',    complete: !!(healthProfile.skinConditions.length > 0 && healthProfile.sensitiveSkin) },
-    { key: 'hair',    complete: !!(healthProfile.previousHairLoss && healthProfile.diagnosedCondition && healthProfile.familyHistory) },
+    { key: 'scalp',   complete: !!(hp.sweat && hp.exercise && hp.heatStyling && hp.satinCovering) },
+    { key: 'medical', complete: !!(hp.medicalConditions?.length > 0 && hp.pregnancyStatus && hp.medications) },
+    { key: 'blood',   complete: !!hp.lastBloodTest },
+    { key: 'skin',    complete: !!(hp.skinConditions?.length > 0 && hp.sensitiveSkin) },
+    { key: 'hair',    complete: !!(hp.previousHairLoss && hp.diagnosedCondition && hp.familyHistory) },
   ];
   const hpCompleted = hpSections.filter(s => s.complete).length;
 
   const chemDisplay = (() => {
-    if (!onboardingData.chemicalProcessing) return 'Not set';
-    if (onboardingData.chemicalProcessing === 'Never') return 'Never';
-    if (onboardingData.chemicalProcessing === 'No, fully natural') return 'No, fully natural';
-    const treatments = onboardingData.chemicalProcessingMultiple?.length > 0
-      ? onboardingData.chemicalProcessingMultiple.join(', ')
-      : onboardingData.chemicalProcessing;
+    if (!ob.chemicalProcessing) return 'Not set';
+    if (ob.chemicalProcessing === 'Never') return 'Never';
+    if (ob.chemicalProcessing === 'No, fully natural') return 'No, fully natural';
+    const treatments = ob.chemicalProcessingMultiple?.length > 0
+      ? ob.chemicalProcessingMultiple.join(', ')
+      : ob.chemicalProcessing;
     return treatments;
   })();
 
-  const betweenWashDisplay = onboardingData.betweenWashCare?.length > 0
-    ? onboardingData.betweenWashCare.join(', ') + (onboardingData.otherBetweenWashCare ? `, ${onboardingData.otherBetweenWashCare}` : '')
+  const betweenWashDisplay = ob.betweenWashCare?.length > 0
+    ? ob.betweenWashCare.join(', ') + (ob.otherBetweenWashCare ? `, ${ob.otherBetweenWashCare}` : '')
     : 'Not set';
 
   const riskColor = (r: string | null) => {
@@ -351,9 +359,9 @@ const ProfilePage = () => {
             <div>
               <p style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: 'rgba(143,178,158,0.85)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 4 }}>Your Profile</p>
               <h1 style={{ fontFamily: playfair, fontSize: 22, fontWeight: 500, color: C.ink, margin: 0 }}>{userName || 'Welcome'}</h1>
-              {onboardingData.gender && (
+              {ob.gender && (
                 <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: '3px 0 0' }}>
-                  {onboardingData.gender === 'woman' ? 'Female' : onboardingData.gender === 'man' ? 'Male' : 'Prefer not to say'}
+                  {ob.gender === 'woman' ? 'Female' : ob.gender === 'man' ? 'Male' : 'Prefer not to say'}
                 </p>
               )}
             </div>
@@ -366,9 +374,9 @@ const ProfilePage = () => {
           <ProfileSection title="Account" icon={User} defaultOpen>
             <InfoRow label="First name" value={userName || 'Not set'} />
             <InfoRow label="Gender" value={
-              onboardingData.gender === 'woman' ? 'Female' :
-              onboardingData.gender === 'man' ? 'Male' :
-              onboardingData.gender === 'prefer-not-to-say' ? 'Prefer not to say' : 'Not set'
+              ob.gender === 'woman' ? 'Female' :
+              ob.gender === 'man' ? 'Male' :
+              ob.gender === 'prefer-not-to-say' ? 'Prefer not to say' : 'Not set'
             } />
 
             <SectionLabel>Notifications</SectionLabel>
@@ -383,9 +391,9 @@ const ProfilePage = () => {
                   Contribute my anonymised data to scalp health research
                 </p>
                 <Switch
-                  checked={research.consented}
+                  checked={!!res.consented}
                   onCheckedChange={(checked) => setResearch({
-                    ...research, consented: checked,
+                    ...res, consented: checked,
                     consentDate: checked ? new Date().toISOString() : null,
                   })}
                 />
@@ -400,9 +408,9 @@ const ProfilePage = () => {
                   </p>
                 </CollapsibleContent>
               </Collapsible>
-              {research.consented && research.photoCount > 0 && (
+              {res.consented && res.photoCount > 0 && (
                 <p style={{ fontFamily: dm, fontSize: 11, fontWeight: 700, color: C.goldDeep, margin: 0 }}>
-                  You've contributed {research.photoCount} photo{research.photoCount !== 1 ? 's' : ''}.
+                  You've contributed {res.photoCount} photo{res.photoCount !== 1 ? 's' : ''}.
                 </p>
               )}
             </div>
@@ -468,21 +476,21 @@ const ProfilePage = () => {
 
           {/* ── Your Hair ── */}
           <ProfileSection title="Your Hair" icon={Scissors}>
-            <InfoRow label="Hair type" value={hairTypeLabels[onboardingData.hairType] || onboardingData.hairType || 'Not set'} />
-            <InfoRow label="How you wear your hair" value={onboardingData.protectiveStyles?.length > 0 ? onboardingData.protectiveStyles.join(', ') : 'Not set'} />
-            {!isMale && onboardingData.protectiveStyleFrequency && <InfoRow label="How often in protective styles" value={onboardingData.protectiveStyleFrequency} />}
-            {isMale && onboardingData.barberFrequency && <InfoRow label="Barber frequency" value={onboardingData.barberFrequency} />}
+            <InfoRow label="Hair type" value={hairTypeLabels[ob.hairType] || ob.hairType || 'Not set'} />
+            <InfoRow label="How you wear your hair" value={ob.protectiveStyles?.length > 0 ? ob.protectiveStyles.join(', ') : 'Not set'} />
+            {!isMale && ob.protectiveStyleFrequency && <InfoRow label="How often in protective styles" value={ob.protectiveStyleFrequency} />}
+            {isMale && ob.barberFrequency && <InfoRow label="Barber frequency" value={ob.barberFrequency} />}
             <div style={{ height: 4 }} />
           </ProfileSection>
 
           {/* ── Hair History ── */}
           <ProfileSection title="Hair History" icon={FlaskConical}>
             <InfoRow label="Chemical processing" value={chemDisplay} />
-            {onboardingData.chemicalProcessing && !['No, fully natural', 'Never', 'Not sure'].includes(onboardingData.chemicalProcessing) && onboardingData.lastChemicalTreatment && (
-              <InfoRow label="Last treatment" value={onboardingData.lastChemicalTreatment} />
+            {ob.chemicalProcessing && !['No, fully natural', 'Never', 'Not sure'].includes(ob.chemicalProcessing) && ob.lastChemicalTreatment && (
+              <InfoRow label="Last treatment" value={ob.lastChemicalTreatment} />
             )}
-            {onboardingData.chemicalProcessingMultiple?.length > 0 && (
-              <InfoRow label="Type" value={onboardingData.chemicalProcessingMultiple.join(', ')} />
+            {ob.chemicalProcessingMultiple?.length > 0 && (
+              <InfoRow label="Type" value={ob.chemicalProcessingMultiple.join(', ')} />
             )}
             <div style={{ height: 4 }} />
           </ProfileSection>
@@ -502,29 +510,29 @@ const ProfilePage = () => {
               <ChevronRight size={14} color={C.muted} />
             </button>
 
-            {onboardingData.cycleLength && <InfoRow label="Typical cycle length" value={onboardingData.cycleLength} />}
-            <InfoRow label="Wash frequency" value={onboardingData.washFrequency || onboardingData.wornOutWashFrequency || onboardingData.washFrequencyPerCycle || 'Not set'} />
-            {onboardingData.betweenWashCare?.length > 0 && <InfoRow label="Between-wash care" value={betweenWashDisplay} />}
+            {ob.cycleLength && <InfoRow label="Typical cycle length" value={ob.cycleLength} />}
+            <InfoRow label="Wash frequency" value={ob.washFrequency || ob.wornOutWashFrequency || ob.washFrequencyPerCycle || 'Not set'} />
+            {ob.betweenWashCare?.length > 0 && <InfoRow label="Between-wash care" value={betweenWashDisplay} />}
             {!showProductEditor ? (
               <>
                 <div style={{ padding: '12px 18px', borderTop: `1px solid ${C.mid}` }}>
                   <p style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>Scalp products</p>
-                  <p style={{ fontFamily: dm, fontSize: 12, color: C.ink, margin: 0 }}>{onboardingData.scalpProducts?.filter(p => p !== 'None').length > 0 ? onboardingData.scalpProducts.filter(p => p !== 'None').join(', ') : 'No scalp products'}</p>
+                  <p style={{ fontFamily: dm, fontSize: 12, color: C.ink, margin: 0 }}>{ob.scalpProducts?.filter(p => p !== 'None').length > 0 ? ob.scalpProducts.filter(p => p !== 'None').join(', ') : 'No scalp products'}</p>
                 </div>
                 <div style={{ padding: '12px 18px', borderTop: `1px solid ${C.mid}` }}>
                   <p style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 4px' }}>Hair products</p>
-                  <p style={{ fontFamily: dm, fontSize: 12, color: C.ink, margin: 0 }}>{onboardingData.hairProducts?.filter(p => p !== 'None').length > 0 ? onboardingData.hairProducts.filter(p => p !== 'None').join(', ') : 'No hair products'}</p>
+                  <p style={{ fontFamily: dm, fontSize: 12, color: C.ink, margin: 0 }}>{ob.hairProducts?.filter(p => p !== 'None').length > 0 ? ob.hairProducts.filter(p => p !== 'None').join(', ') : 'No hair products'}</p>
                 </div>
               </>
             ) : (
               <div style={{ padding: '14px 18px', borderTop: `1px solid ${C.mid}`, display: 'flex', flexDirection: 'column', gap: 20 }}>
                 <div>
                   <p style={{ fontFamily: dm, fontSize: 12, fontWeight: 600, color: C.ink, margin: '0 0 8px' }}>Scalp products</p>
-                  <ProductSearch category="scalp" selectedProducts={onboardingData.scalpProducts?.filter(p => p !== 'None') || []} onProductsChange={(prods) => setOnboardingData({ ...onboardingData, scalpProducts: prods })} darkMode />
+                  <ProductSearch category="scalp" selectedProducts={ob.scalpProducts?.filter(p => p !== 'None') || []} onProductsChange={(prods) => setOnboardingData({ ...ob, scalpProducts: prods })} darkMode />
                 </div>
                 <div>
                   <p style={{ fontFamily: dm, fontSize: 12, fontWeight: 600, color: C.ink, margin: '0 0 8px' }}>Hair products</p>
-                  <ProductSearch category="hair" selectedProducts={onboardingData.hairProducts?.filter(p => p !== 'None') || []} onProductsChange={(prods) => setOnboardingData({ ...onboardingData, hairProducts: prods })} darkMode />
+                  <ProductSearch category="hair" selectedProducts={ob.hairProducts?.filter(p => p !== 'None') || []} onProductsChange={(prods) => setOnboardingData({ ...ob, hairProducts: prods })} darkMode />
                 </div>
               </div>
             )}
@@ -562,10 +570,10 @@ const ProfilePage = () => {
             <div style={{ padding: '0 18px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
               {[
                 { label: 'Date',        val: baselineDate || 'Not set' },
-                { label: 'Itch',        val: onboardingData.baselineItch || 'Not set' },
-                { label: 'Tenderness',  val: onboardingData.baselineTenderness || 'Not set' },
-                { label: 'Hairline',    val: onboardingData.baselineHairline || 'Not set' },
-                { label: 'Hair health', val: onboardingData.baselineHairHealth || 'Not set' },
+                { label: 'Itch',        val: ob.baselineItch || 'Not set' },
+                { label: 'Tenderness',  val: ob.baselineTenderness || 'Not set' },
+                { label: 'Hairline',    val: ob.baselineHairline || 'Not set' },
+                { label: 'Hair health', val: ob.baselineHairHealth || 'Not set' },
               ].map(row => (
                 <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ fontFamily: dm, fontSize: 12, color: C.muted }}>{row.label}</span>
@@ -580,9 +588,9 @@ const ProfilePage = () => {
 
             <SectionLabel>Baseline Photos</SectionLabel>
             <div style={{ padding: '0 18px 14px' }}>
-              {baselinePhotos.length > 0 ? (
+              {photos.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {baselinePhotos.map(photo => (
+                  {photos.map(photo => (
                     <div key={photo.area} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                       <div style={{ width: 38, height: 38, borderRadius: 10, background: C.gold08, border: `1px solid ${C.goldBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                         <Camera size={15} color={C.goldDeep} strokeWidth={1.5} />
@@ -615,9 +623,9 @@ const ProfilePage = () => {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                     <span style={{ fontFamily: dm, fontSize: 12, color: C.muted }}>Tracking</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span style={{ fontFamily: dm, fontSize: 12, color: C.ink }}>{onboardingData.menstrualTracking === "Yes, I'd like to track" ? 'On' : 'Off'}</span>
-                      <button onClick={toggleMenstrualTracking} style={{ width: 42, height: 24, borderRadius: 100, background: onboardingData.menstrualTracking === "Yes, I'd like to track" ? C.goldSolid : 'rgba(255,255,255,0.12)', border: 'none', cursor: 'pointer', position: 'relative', transition: 'background 0.2s' }}>
-                        <div style={{ width: 18, height: 18, borderRadius: '50%', background: C.white, position: 'absolute', top: 3, left: onboardingData.menstrualTracking === "Yes, I'd like to track" ? 21 : 3, transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }} />
+                      <span style={{ fontFamily: dm, fontSize: 12, color: C.ink }}>{ob.menstrualTracking === "Yes, I'd like to track" ? 'On' : 'Off'}</span>
+                      <button onClick={toggleMenstrualTracking} style={{ width: 42, height: 24, borderRadius: 100, background: ob.menstrualTracking === "Yes, I'd like to track" ? C.goldSolid : 'rgba(255,255,255,0.12)', border: 'none', cursor: 'pointer', position: 'relative', transition: 'background 0.2s' }}>
+                        <div style={{ width: 18, height: 18, borderRadius: '50%', background: C.white, position: 'absolute', top: 3, left: ob.menstrualTracking === "Yes, I'd like to track" ? 21 : 3, transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }} />
                       </button>
                     </div>
                   </div>
@@ -639,15 +647,15 @@ const ProfilePage = () => {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                 <span style={{ fontFamily: dm, fontSize: 9, fontWeight: 700, color: C.muted, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Goals</span>
                 {!showGoalEditor && (
-                  <button onClick={() => { setEditGoals(onboardingData.goals || []); setShowGoalEditor(true); }} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', fontFamily: dm, fontSize: 11, fontWeight: 700, color: C.goldDeep }}>
+                  <button onClick={() => { setEditGoals(ob.goals || []); setShowGoalEditor(true); }} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', fontFamily: dm, fontSize: 11, fontWeight: 700, color: C.goldDeep }}>
                     <Pencil size={11} /> Edit
                   </button>
                 )}
               </div>
               {!showGoalEditor ? (
-                onboardingData.goals?.length > 0 ? (
+                ob.goals?.length > 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {onboardingData.goals.map(g => (
+                    {ob.goals.map(g => (
                       <div key={g} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                         <Target size={12} color={C.goldDeep} strokeWidth={1.8} style={{ flexShrink: 0, marginTop: 2 }} />
                         <p style={{ fontFamily: dm, fontSize: 12, color: C.ink, margin: 0 }}>{g}</p>

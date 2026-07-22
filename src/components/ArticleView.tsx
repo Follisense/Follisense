@@ -5,6 +5,9 @@ import { Article, getRelatedArticles } from '@/data/learnArticles';
 
 interface ArticleViewProps {
   article: Article;
+  // Passed down from LearnPage, which owns the article image map. Kept as a
+  // prop rather than imported so the two files don't import each other.
+  coverImage?: string | null;
   onBack: () => void;
   onNavigate: (id: string) => void;
 }
@@ -13,33 +16,33 @@ const mont     = "'Montserrat', sans-serif";
 const playfair = "'Playfair Display', serif";
 
 const C = {
-  bg:         '#FAF8F5',
-  surface:    '#F5F0EB',
-  ink:        '#7A746E',
-  goldSolid:  '#D4A866',
-  goldDeep:   '#C09A52',
-  gold10:     'rgba(212,168,102,0.10)',
-  gold20:     'rgba(212,168,102,0.20)',
-  goldBorder: 'rgba(212,168,102,0.18)',
-  mid:        '#E8E4DF',
-  muted:      '#B0AAA4',
-  warm:       '#9A9490',
-  white:      '#FFFFFF',
+  bg:          '#FAF8F5',
+  surface:     '#F5F0EB',
+  ink:         '#7A746E',
+  greenSolid:  '#4E7A63',
+  greenDeep:   '#2E4A39',
+  green10:     'rgba(78,122,99,0.10)',
+  green20:     'rgba(78,122,99,0.20)',
+  greenBorder: 'rgba(78,122,99,0.20)',
+  mid:         '#E8E4DF',
+  muted:       '#B0AAA4',
+  warm:        '#9A9490',
+  white:       '#FFFFFF',
 };
 
 const categoryColor: Record<string, string> = {
-  'Scalp health':           '#B8893E',
-  'Hair health':            '#A07840',
-  'Nutrition':              '#B49630',
-  'Conditions':             '#906040',
-  'Styling and protection': '#887060',
-  "Men's hair":             '#786450',
-  'Myth busting':           '#C89A48',
+  'Scalp health':           '#4E7A63',
+  'Hair health':            '#5B8468',
+  'Nutrition':              '#6E9E82',
+  'Conditions':             '#3F6B54',
+  'Styling and protection': '#587A67',
+  "Men's hair":             '#456B58',
+  'Myth busting':           '#7BA88C',
 };
 
 const RelatedCard = ({ article, onClick }: { article: Article; onClick: () => void }) => {
   const [hovered, setHovered] = useState(false);
-  const accent = categoryColor[article.category] || C.goldDeep;
+  const accent = categoryColor[article.category] || C.greenDeep;
 
   return (
     <button
@@ -50,10 +53,10 @@ const RelatedCard = ({ article, onClick }: { article: Article; onClick: () => vo
         width: '100%', textAlign: 'left',
         background: C.white,
         borderRadius: 16, marginBottom: 8,
-        border: hovered ? `1.5px solid ${C.goldBorder}` : `1.5px solid ${C.mid}`,
+        border: hovered ? `1.5px solid ${C.greenBorder}` : `1.5px solid ${C.mid}`,
         cursor: 'pointer',
         display: 'flex', alignItems: 'center', overflow: 'hidden',
-        boxShadow: hovered ? `0 4px 16px rgba(212,168,102,0.10)` : '0 2px 8px rgba(0,0,0,0.04)',
+        boxShadow: hovered ? `0 4px 16px rgba(78,122,99,0.10)` : '0 2px 8px rgba(0,0,0,0.04)',
         transition: 'border 0.18s, box-shadow 0.18s',
         padding: 0,
       }}
@@ -73,7 +76,7 @@ const RelatedCard = ({ article, onClick }: { article: Article; onClick: () => vo
         </span>
         <p style={{
           fontFamily: mont, fontSize: 13, fontWeight: 600,
-          color: hovered ? C.goldDeep : C.ink,
+          color: hovered ? C.greenDeep : C.ink,
           margin: '0 0 6px', lineHeight: 1.35,
           transition: 'color 0.18s',
         }}>
@@ -85,15 +88,16 @@ const RelatedCard = ({ article, onClick }: { article: Article; onClick: () => vo
         </div>
       </div>
       <div style={{ paddingRight: 14 }}>
-        <ChevronRight size={14} color={hovered ? C.goldSolid : C.mid} style={{ transition: 'color 0.18s' }} />
+        <ChevronRight size={14} color={hovered ? C.greenSolid : C.mid} style={{ transition: 'color 0.18s' }} />
       </div>
     </button>
   );
 };
 
-const ArticleView = ({ article, onBack, onNavigate }: ArticleViewProps) => {
+const ArticleView = ({ article, coverImage, onBack, onNavigate }: ArticleViewProps) => {
   const related = getRelatedArticles(article);
-  const accent  = categoryColor[article.category] || C.goldDeep;
+  const accent  = categoryColor[article.category] || C.greenDeep;
+  const cover   = coverImage || null;
   const [backHovered, setBackHovered] = useState(false);
 
   return (
@@ -118,7 +122,7 @@ const ArticleView = ({ article, onBack, onNavigate }: ArticleViewProps) => {
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
               background: 'none', border: 'none', cursor: 'pointer', padding: '6px 0',
-              color: backHovered ? C.goldDeep : C.muted,
+              color: backHovered ? C.greenDeep : C.muted,
               fontFamily: mont, fontSize: 12, fontWeight: 600,
               transition: 'color 0.18s',
             }}
@@ -128,13 +132,41 @@ const ArticleView = ({ article, onBack, onNavigate }: ArticleViewProps) => {
           </button>
         </div>
 
+        {/* ── Cover image,the same image used on the article card in Learn ── */}
+        {cover && (
+          <div style={{ padding: '12px 20px 0' }}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.985 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.3 }}
+              style={{
+                width: '100%', height: 190, borderRadius: 18, overflow: 'hidden',
+                border: `1px solid ${C.mid}`, background: C.surface,
+                boxShadow: '0 4px 18px rgba(0,0,0,0.06)',
+                position: 'relative',
+              }}
+            >
+              <img
+                src={cover}
+                alt=""
+                loading="lazy"
+                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              />
+              <div style={{
+                position: 'absolute', inset: 0, pointerEvents: 'none',
+                background: 'linear-gradient(180deg, rgba(0,0,0,0) 55%, rgba(0,0,0,0.18) 100%)',
+              }} />
+            </motion.div>
+          </div>
+        )}
+
         {/* ── Header ── */}
         <div style={{ padding: '16px 20px 0' }}>
           <span style={{
             display: 'inline-block',
             fontFamily: mont, fontSize: 9, fontWeight: 700,
-            color: accent, background: 'rgba(212,168,102,0.08)',
-            border: `1px solid ${C.goldBorder}`,
+            color: accent, background: 'rgba(78,122,99,0.08)',
+            border: `1px solid ${C.greenBorder}`,
             borderRadius: 100, padding: '4px 12px',
             letterSpacing: '0.07em', textTransform: 'uppercase',
             marginBottom: 12,
@@ -161,7 +193,7 @@ const ArticleView = ({ article, onBack, onNavigate }: ArticleViewProps) => {
           {/* Divider */}
           <div style={{
             height: 1.5, borderRadius: 2, marginBottom: 22,
-            background: `linear-gradient(to right, rgba(212,168,102,0.30), transparent)`,
+            background: `linear-gradient(to right, rgba(78,122,99,0.30), transparent)`,
           }} />
         </div>
 
@@ -206,23 +238,23 @@ const ArticleView = ({ article, onBack, onNavigate }: ArticleViewProps) => {
         {/* ── Chat nudge ── */}
         <div style={{ padding: '24px 20px 0' }}>
           <div style={{
-            background: 'rgba(212,168,102,0.07)',
-            border: `1.5px solid ${C.goldBorder}`,
+            background: 'rgba(78,122,99,0.07)',
+            border: `1.5px solid ${C.greenBorder}`,
             borderRadius: 18, padding: '16px 18px',
             display: 'flex', alignItems: 'center', gap: 14,
           }}>
             <div style={{
               width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-              background: 'rgba(212,168,102,0.15)',
+              background: 'rgba(78,122,99,0.15)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              <MessageCircle size={16} color={C.goldDeep} />
+              <MessageCircle size={16} color={C.greenDeep} />
             </div>
             <div>
               <p style={{ fontFamily: mont, fontSize: 11, color: C.muted, margin: '0 0 2px' }}>
                 Got more questions?
               </p>
-              <p style={{ fontFamily: mont, fontSize: 13, fontWeight: 700, color: C.goldDeep, margin: 0 }}>
+              <p style={{ fontFamily: mont, fontSize: 13, fontWeight: 700, color: C.greenDeep, margin: 0 }}>
                 Tap the chat button to ask FolliSense
               </p>
             </div>
@@ -235,12 +267,12 @@ const ArticleView = ({ article, onBack, onNavigate }: ArticleViewProps) => {
             onClick={onBack}
             style={{
               width: '100%', height: 48, borderRadius: 14,
-              border: `1.5px solid ${C.goldBorder}`,
+              border: `1.5px solid ${C.greenBorder}`,
               background: C.white,
               fontFamily: mont, fontSize: 13, fontWeight: 700,
-              color: C.goldDeep, cursor: 'pointer',
+              color: C.greenDeep, cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              boxShadow: '0 2px 8px rgba(212,168,102,0.08)',
+              boxShadow: '0 2px 8px rgba(78,122,99,0.08)',
             }}
           >
             <ArrowLeft size={15} />

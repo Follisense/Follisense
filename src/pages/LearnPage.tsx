@@ -262,7 +262,7 @@ const LearnPage = () => {
   if (selectedArticle) {
     return (
       <div style={{ minHeight: '100vh', background: C.bg, overflowY: 'auto' }}>
-        <ArticleView article={selectedArticle} onBack={() => { setSelectedArticleId(null); setSearchParams({}); }} onNavigate={(id) => { setSelectedArticleId(id); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
+        <ArticleView article={selectedArticle} coverImage={getArticleImage(selectedArticle.id)} onBack={() => { setSelectedArticleId(null); setSearchParams({}); }} onNavigate={(id) => { setSelectedArticleId(id); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
       </div>
     );
   }

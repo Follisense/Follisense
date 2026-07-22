@@ -27,7 +27,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     '/stylist/observation', '/stylist/quiz', '/find-specialist',
     '/forgot-password', '/salon-checkin', '/stylist/onboarding',
     '/stylist/signup', '/stylist/login', '/stylist/quick-intake',
-    '/spot-it', '/shop', '/verify-otp','/terms', '/privacy', '/auth/callback', '/goodbye','/chat','/salon-visit'
+    '/spot-it', '/shop', '/verify-otp','/terms', '/privacy', '/auth/callback', '/goodbye','/chat','/salon-visit','/reset-password',
   ];
 
   const showNav =

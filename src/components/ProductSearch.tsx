@@ -369,19 +369,18 @@ const ProductSearch = ({ category, selectedProducts, onProductsChange, darkMode 
     }
   };
 
+  const green     = '#8FB29E';
   const bg        = darkMode ? '#1C1814'                 : '#fff';
-  const border    = darkMode ? 'rgba(212,168,102,0.2)'   : '#E8DED1';
+  const border    = darkMode ? 'rgba(143,178,158,0.22)'  : '#E8DED1';
   const inputBg   = darkMode ? 'rgba(255,255,255,0.05)'  : '#F8F5F1';
   const ink       = darkMode ? '#F5EFE6'                 : '#1C1C1C';
   const muted     = darkMode ? 'rgba(245,239,230,0.45)'  : '#999';
-  const selBg     = darkMode ? 'rgba(212,168,102,0.15)'  : 'rgba(127,168,150,0.1)';
-  const selBorder = darkMode ? 'rgba(212,168,102,0.5)'   : '#7fa896';
-  const tabActiveBg     = darkMode ? 'rgba(212,168,102,0.2)'  : 'rgba(127,168,150,0.12)';
-  const tabActiveBorder = darkMode ? 'rgba(212,168,102,0.5)'  : '#7fa896';
-  const tabActiveColor  = darkMode ? '#D4A866'                 : '#7fa896';
-  const gold      = '#D4A866';
-  const accent    = darkMode ? gold : '#7fa896';
-
+  const selBg     = darkMode ? 'rgba(143,178,158,0.15)'  : 'rgba(127,168,150,0.1)';
+  const selBorder = darkMode ? 'rgba(143,178,158,0.5)'   : '#7fa896';
+  const tabActiveBg     = darkMode ? 'rgba(143,178,158,0.20)' : 'rgba(127,168,150,0.12)';
+  const tabActiveBorder = darkMode ? 'rgba(143,178,158,0.5)'  : '#7fa896';
+  const tabActiveColor  = darkMode ? green                    : '#7fa896';
+  const accent    = darkMode ? green : '#7fa896';
   return (
     <div style={{ fontFamily: dm }}>
       <style>{`.product-search-list::-webkit-scrollbar { display: none; } .tab-scroll::-webkit-scrollbar { display: none; }`}</style>
@@ -437,7 +436,7 @@ const ProductSearch = ({ category, selectedProducts, onProductsChange, darkMode 
                   {selected && <Check size={11} color="#fff" strokeWidth={2.5} />}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontFamily: dm, fontSize: 12, fontWeight: 600, color: selected ? (darkMode ? gold : '#7fa896') : ink, margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.name}</p>
+                  <p style={{ fontFamily: dm, fontSize: 12, fontWeight: 600, color: selected ? accent : ink, margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.name}</p>
                   <p style={{ fontFamily: dm, fontSize: 10, color: muted, margin: 0 }}>{product.brand} · {product.category}</p>
                 </div>
               </button>
