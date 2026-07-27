@@ -590,12 +590,18 @@ const HomePage = () => {
         .product-scroll::-webkit-scrollbar { display: none; }
         .product-scroll { -ms-overflow-style: none; scrollbar-width: none; }
         @keyframes shimmer { 0%{background-position:400% 0} 100%{background-position:-400% 0} }
+        @media (min-width: 768px) {
+          .fs-home-inner { max-width: 760px; margin: 0 auto; }
+          .fs-home-hero  { max-width: 760px; margin: 0 auto; }
+          .fs-icon-grid  { grid-template-columns: repeat(6, 1fr) !important; }
+        }
       `}</style>
+      
 
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
 
         {/* ── Hero (light) ── */}
-        <div style={{ background: C.bg, padding: '52px 20px 20px', position: 'relative', overflow: 'hidden' }}>
+       <div className="fs-home-hero" style={{ background: C.bg, padding: '52px 20px 20px', position: 'relative', overflow: 'hidden' }}> 
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
@@ -614,8 +620,8 @@ const HomePage = () => {
             </button>
           </div>
         </div>
-
-        <div style={{ padding: '0 20px 110px' }}>
+       <div className="fs-home-inner" style={{ padding: '0 20px 110px' }}>
+        
 
           {/* ── Streak ── */}
           <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
@@ -635,7 +641,7 @@ const HomePage = () => {
           {/* ── Icon grid ── */}
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
             style={{ marginBottom: 32 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', rowGap: 20, columnGap: 4 }}>
+           <div className="fs-icon-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', rowGap: 20, columnGap: 4 }}>
               {iconTiles.map((tile, i) => (
                 <motion.div key={tile.label} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 + i * 0.045 }}>
                   <IconTile {...tile} />

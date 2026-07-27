@@ -2,6 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Home, Clock, BookOpen, User, Users } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import FloatingChat from '@/components/FloatingChat';
+import wordmark from '@/assets/wordmark-green.png';
 
 const consumerTabs = [
   { path: '/home',    icon: Home,     label: 'Home'    },
@@ -42,38 +43,67 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
   ].includes(location.pathname);
 
   return (
-    // Outer wrapper,always cream/white, fills the whole screen on desktop
-    <div className="min-h-screen" style={{ backgroundColor: '#FAF8F5' }}>
+    // Fixed shell fills the real viewport regardless of #root's leftover padding
+    <div className="fixed inset-0 overflow-hidden" style={{ backgroundColor: '#FAF8F5' }}>
+      <div className="flex h-full w-full">
 
-      {/* Inner container,always capped at 430px, centred */}
-      <div className="mx-auto min-h-screen relative max-w-[430px]">
-        {children}
-
+        {/* Sidebar nav — hidden on mobile, shown from md up */}
         {showNav && (
-          <nav className="fixed bottom-0 left-0 right-0 z-50">
-            <div className="max-w-[430px] mx-auto bg-card border-t border-border">
-              <div className="flex items-center justify-around py-2 px-2">
-                {tabs.map(({ path, icon: Icon, label }) => {
-                  const active = location.pathname === path;
-                  return (
-                    <button
-                      key={path}
-                      onClick={() => navigate(path)}
-                      className={`flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-xl transition-colors ${
-                        active ? 'text-primary' : 'text-muted-foreground'
-                      }`}
-                    >
-                      <Icon size={22} strokeWidth={active ? 2.2 : 1.8} />
-                      <span className="text-[11px] font-medium">{label}</span>
-                    </button>
-                  );
-                })}
-              </div>
+          <nav className="hidden md:flex md:flex-col md:w-56 lg:w-64 md:shrink-0 md:border-r md:border-border md:bg-card md:h-full md:py-8 md:px-4">
+            <img src={wordmark} alt="FolliSense" className="w-32 mb-8 px-3" />
+            <div className="flex flex-col gap-1">
+              {tabs.map(({ path, icon: Icon, label }) => {
+                const active = location.pathname === path;
+                return (
+                  <button
+                    key={path}
+                    onClick={() => navigate(path)}
+                    className={`flex items-center gap-3 py-2.5 px-3 rounded-xl transition-colors text-left ${
+                      active ? 'text-primary bg-primary/10 font-semibold' : 'text-muted-foreground hover:bg-muted'
+                    }`}
+                  >
+                    <Icon size={20} strokeWidth={active ? 2.2 : 1.8} />
+                    <span className="text-sm">{label}</span>
+                  </button>
+                );
+              })}
             </div>
           </nav>
         )}
 
-        {!stylistMode && !isAuthPage && <FloatingChat />}
+        {/* Main content — scrolls independently, fills all remaining width */}
+        <main className="flex-1 w-full min-w-0 relative overflow-y-auto">
+          <div className="mx-auto w-full max-w-[430px] md:max-w-none">
+            {children}
+          </div>
+
+          {/* Bottom tab bar — mobile only */}
+          {showNav && (
+            <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50">
+              <div className="max-w-[430px] mx-auto bg-card border-t border-border">
+                <div className="flex items-center justify-around py-2 px-2">
+                  {tabs.map(({ path, icon: Icon, label }) => {
+                    const active = location.pathname === path;
+                    return (
+                      <button
+                        key={path}
+                        onClick={() => navigate(path)}
+                        className={`flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-xl transition-colors ${
+                          active ? 'text-primary' : 'text-muted-foreground'
+                        }`}
+                      >
+                        <Icon size={22} strokeWidth={active ? 2.2 : 1.8} />
+                        <span className="text-[11px] font-medium">{label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </nav>
+          )}
+
+          {!stylistMode && !isAuthPage && <FloatingChat />}
+        </main>
       </div>
     </div>
   );

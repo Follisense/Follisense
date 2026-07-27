@@ -3,22 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/supabaseClient';
 
-// Splash image lives in src/assets/. The @/ alias points to src/, so this path
-// works no matter where this component file sits (no fragile ../ relative path).
 import splashImage from '@/assets/follisense_splash_v2.png';
 
-
-// Warm brown matched to the splash image's edges, fades blend into the suede
-// instead of flashing black at the start and end.
-const BROWN = '#4A3526';
+// Brand green matched to the app, fades blend into green instead of brown
+const GREEN = '#12211A';
 
 const SplashScreen = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // After the 2.5s splash, decide where to go:
-    //  - logged in  → /home
-    //  - logged out → /welcome
     const timer = setTimeout(async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -33,19 +26,16 @@ const SplashScreen = () => {
   return (
     <div
       style={{
-        minHeight: '100vh',
-        width: '100%',
-        backgroundColor: BROWN,
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: GREEN,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         overflow: 'hidden',
-        position: 'relative',
       }}
     >
-      {/* Full-bleed splash image: fades up from brown, breathes in, fades out.
-          objectFit: 'cover' fills the screen; the breathe is a subtle 2% so it
-          never crops more than necessary. */}
+      {/* Full-bleed splash image: fades up, breathes gently, fades out */}
       <motion.img
         src={splashImage}
         alt="FolliSense"
@@ -62,7 +52,6 @@ const SplashScreen = () => {
         style={{
           width: '100%',
           height: '100%',
-          minHeight: '100vh',
           objectFit: 'cover',
           objectPosition: 'center',
           position: 'absolute',
@@ -70,7 +59,7 @@ const SplashScreen = () => {
         }}
       />
 
-      {/* Brown fade-out layer for a smooth handoff to the next page */}
+      {/* Green fade-out layer for a smooth handoff to the next page */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: [0, 0, 1] }}
@@ -78,7 +67,7 @@ const SplashScreen = () => {
         style={{
           position: 'absolute',
           inset: 0,
-          backgroundColor: BROWN,
+          backgroundColor: GREEN,
           pointerEvents: 'none',
         }}
       />

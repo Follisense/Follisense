@@ -1,11 +1,4 @@
 // WelcomeScreen.tsx
-// Replicates follisense-flow-test.html (Skin B - Warm), minus the splash
-// (the app's own splash screen runs before this component):
-//   1. Carousel - 3 swipeable value cards with dots + next button + Skip
-//      First visit only. Force it anytime by adding ?intro to the URL.
-//   2. Auth     - wordmark, tagline, Create Account / Log In
-// Constrained to a phone-width frame (430px) with dark gutters on desktop.
-
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import wordmark from '@/assets/wordmark-green.png';
@@ -13,7 +6,6 @@ import wordmark from '@/assets/wordmark-green.png';
 const fraunces   = "'Fraunces', serif";
 const instrument = "'Instrument Sans', system-ui, sans-serif";
 
-// Skin B - Warm tokens (from the mockup)
 const T = {
   surface:    '#F3EDE3',
   card:       '#FFFCF5',
@@ -71,9 +63,6 @@ type Screen = 'carousel' | 'auth';
 
 export default function WelcomeScreen() {
   const navigate = useNavigate();
-  // First visit: carousel -> auth. Returning users: straight to auth.
-  // Demo override: open the app with ?intro in the URL (e.g. localhost:8080/?intro
-  // or yourdomain.com/?intro) to force the carousel regardless of the flag.
   const [screen, setScreen] = useState<Screen>(() => {
     const forceIntro = new URLSearchParams(window.location.search).has('intro');
     if (forceIntro) return 'carousel';
@@ -82,7 +71,6 @@ export default function WelcomeScreen() {
   const [card, setCard] = useState(0);
   const touchX = useRef<number | null>(null);
 
-  // Once they reach auth (via Skip or the last card), remember it
   useEffect(() => {
     if (screen === 'auth') localStorage.setItem('fs_seen_intro', '1');
   }, [screen]);
@@ -132,13 +120,14 @@ export default function WelcomeScreen() {
   };
 
   return (
-    // Viewport shell - dark gutters on desktop, invisible on mobile
+    // Fills the whole viewport,no separate dark shell, content just
+    // centers itself within the full-width cream surface on larger screens.
     <div
       style={{
-        minHeight: '100dvh',
-        background: '#2a2c28',
-        display: 'flex',
-        justifyContent: 'center',
+        position: 'fixed',
+        inset: 0,
+        overflowY: 'auto',
+        background: T.surface,
         fontFamily: instrument,
       }}
     >
@@ -146,18 +135,14 @@ export default function WelcomeScreen() {
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Instrument+Sans:wght@400;500;600&display=swap');
       `}</style>
 
-      {/* Phone frame - surface color and texture live here */}
       <div
         style={{
           position: 'relative',
           width: '100%',
-          maxWidth: 430,
           minHeight: '100dvh',
-          background: T.surface,
           overflow: 'hidden',
         }}
       >
-        {/* Background texture */}
         <svg
           viewBox="0 0 390 800"
           preserveAspectRatio="none"
@@ -172,7 +157,6 @@ export default function WelcomeScreen() {
           <path d="M-40 700 C 110 640, 260 790, 430 680" />
         </svg>
 
-        {/* 1 - VALUE CAROUSEL */}
         <div
           style={{ ...screenStyle(screen === 'carousel'), justifyContent: 'flex-start' }}
           onTouchStart={onTouchStart}
@@ -185,7 +169,7 @@ export default function WelcomeScreen() {
             Skip
           </button>
 
-          <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'center' }}>
+          <div style={{ flex: 1, width: '100%', maxWidth: 420, display: 'flex', alignItems: 'center' }}>
             {CARDS.map((c, i) => (
               <div
                 key={c.title}
@@ -241,8 +225,7 @@ export default function WelcomeScreen() {
           </div>
         </div>
 
-        {/* 2 - AUTH */}
-        <div style={{ ...screenStyle(screen === 'auth'), justifyContent: 'center' }}>
+        <div style={{ ...screenStyle(screen === 'auth'), justifyContent: 'center', maxWidth: 420, left: '50%', transform: 'translateX(-50%)' }}>
           <img src={wordmark} alt="FolliSense" style={{ width: 190, marginBottom: 14 }} />
           <div style={{ fontSize: 15, color: T.muted, marginBottom: 38 }}>
             Healthy hair starts with knowing.
