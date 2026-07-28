@@ -538,7 +538,7 @@ const Onboarding = () => {
         const total = Object.values(numericScores).reduce((a, b) => a + b, 0);
         supabase.from('checkins').insert({
           user_id:     session.user.id,
-          type:        'baseline',
+          type:        'symptoms',
           symptoms:    {
             itch: checkIn.itch, tenderness: checkIn.tenderness, hairline: checkIn.hairline,
             flaking: checkIn.flaking, shedding: checkIn.shedding, bumps: checkIn.bumps, dryness: checkIn.dryness,

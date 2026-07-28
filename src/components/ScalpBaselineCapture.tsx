@@ -14,93 +14,189 @@ import scalpTopMale     from '@/assets/scalp-top-male.png';
 
 const GOOGLE_VISION_KEY = import.meta.env.VITE_GOOGLE_VISION_KEY as string;
 
+// Vision only needs enough pixels to label the image. Sending a full-res phone
+// photo (3-8MB, larger again once base64'd) was the whole reason validation felt
+// slow. We downscale to this before the call. The ORIGINAL full-res dataUrl is
+// still what gets previewed and saved,this copy is for Vision only.
+const VISION_MAX_EDGE = 1024;
+const VISION_QUALITY  = 0.8;
+const VISION_TIMEOUT  = 12000; // ms, stops the spinner hanging on a stalled call
+
+// ─── IMAGE DOWNSCALE ──────────────────────────────────────────────────────────
+const compressForVision = (dataUrl: string): Promise<string> =>
+  new Promise(resolve => {
+    try {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const scale = Math.min(1, VISION_MAX_EDGE / Math.max(img.width, img.height));
+          // Already small enough, don't waste a re-encode
+          if (scale === 1) { resolve(dataUrl.split(',')[1]); return; }
+          const canvas = document.createElement('canvas');
+          canvas.width  = Math.round(img.width  * scale);
+          canvas.height = Math.round(img.height * scale);
+          const ctx = canvas.getContext('2d');
+          if (!ctx) { resolve(dataUrl.split(',')[1]); return; }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/jpeg', VISION_QUALITY).split(',')[1]);
+        } catch {
+          resolve(dataUrl.split(',')[1]);
+        }
+      };
+      img.onerror = () => resolve(dataUrl.split(',')[1]);
+      img.src = dataUrl;
+    } catch {
+      resolve(dataUrl.split(',')[1]);
+    }
+  });
+
+// ─── LABEL MATCHING ───────────────────────────────────────────────────────────
+// Vision labels are matched on WORD boundaries, never as substrings.
+// Substring matching was the core bug: 'back' matched "Background", 'ear'
+// matched "Beard" and "Eyewear", 'eye' matched almost any animal photo.
+// Optional trailing s/es is allowed so "ears" and "braids" still match.
+const hasLabel = (labels: string[], keyword: string): boolean => {
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`(^|[^a-z])${escaped}(s|es)?($|[^a-z])`);
+  return labels.some(l => re.test(l));
+};
+const countLabels = (labels: string[], keys: string[]): number =>
+  keys.filter(k => hasLabel(labels, k)).length;
+const anyLabel = (labels: string[], keys: string[]): boolean =>
+  keys.some(k => hasLabel(labels, k));
+
+// ─── SIGNAL SETS ──────────────────────────────────────────────────────────────
+// HAIR_SIGNALS: real evidence there is hair or a scalp in the frame.
+// This is the gate that stops walls, carpets, plates of food and pets.
+// Deliberately excludes 'skin', 'texture', 'pattern', 'macro', 'close-up',
+// which fire on almost any close-up photograph of anything.
+const HAIR_SIGNALS = [
+  'hair', 'scalp', 'hairstyle', 'hairline', 'hairdresser', 'hair care',
+  'hair coloring', 'hair colouring', 'hair extension', 'hairpiece',
+  'black hair', 'brown hair', 'blond hair', 'long hair', 'short hair',
+  'wavy hair', 'curly hair', 'textured hair', 'hair texture', 'layered hair',
+  'lace wig', 'wig', 'weave', 'afro', 'braid', 'cornrow', 'loc', 'dreadlock',
+  'twist out', 'curl', 'coil', 'ringlet', 'kink', 'jheri curl', 'bun',
+  'ponytail', 'updo', 'bang', 'fringe', 'fade', 'buzz cut', 'crew cut',
+  'undercut', 'shaved head', 'bald', 'nape', 'crown', 'forehead',
+  'sideburn', 'beard', 'facial hair', 'eyelash', 'eyebrow',
+];
+
+// PERSON_SIGNALS: a human is present, even if hair is not the subject.
+// Used ONLY to tell "right person, wrong angle" from "unrelated photo".
+const PERSON_SIGNALS = [
+  ...HAIR_SIGNALS,
+  'head', 'person', 'human', 'face', 'neck', 'ear', 'cheek', 'chin', 'jaw',
+  'temple', 'lip', 'mouth', 'selfie', 'portrait', 'shoulder', 'iris',
+  'human body', 'human head', 'human face', 'moustache', 'mustache',
+];
+
+const FAKE_WORDS = [
+  'cartoon', 'animation', 'illustration', 'drawing', 'sketch', 'clipart',
+  'skull', 'diagram', '3d render', 'render', 'comic', 'manga', 'anime',
+  'screenshot', 'web page', 'website', 'graphic design', 'logo', 'poster',
+  'font', 'text', 'document', 'paper', 'brand', 'advertising', 'emoticon',
+];
+
+const HARD_JUNK = [
+  'food', 'meal', 'cuisine', 'dish', 'recipe', 'ingredient', 'tableware',
+  'plate', 'drink', 'landscape', 'plant', 'flower', 'leaf', 'tree', 'grass',
+  'sky', 'cloud', 'building', 'architecture', 'furniture', 'wall', 'floor',
+  'wood', 'carpet', 'textile', 'animal', 'cat', 'dog', 'felidae', 'canidae',
+  'whisker', 'snout', 'bird', 'fish', 'car', 'vehicle', 'wheel', 'tire',
+  'shoe', 'footwear', 'gadget', 'mobile phone', 'computer', 'keyboard',
+];
+
 // ─── ANGLE CONFIGS ────────────────────────────────────────────────────────────
-// Middle-ground rules:
-//   PASS  → photo has at least one right-angle signal for this step
-//   REJECT (angle) → photo has a right-angle signal BUT also has wrongAngleThreshold+
-//                    wrong-angle signals (clear evidence of the wrong angle)
-//   REJECT (no signal) → no right-angle signal AND a person is otherwise detected
-//                        (generic hair shot submitted to wrong step)
-//
-// Generic labels like "hair", "skin", "person", "head" are intentionally excluded
-// from rightAngleSignals,they must come from angle-specific anatomy/texture labels
-// so random hair photos can't accidentally pass the wrong step.
+// strongSignals → angle-specific anatomy. One match is enough to pass.
+// weakSignals   → suggestive but generic. Only count when a hair signal is also
+//                 present, so "texture" or "pattern" alone can never pass a step.
+// wrongSignals  → evidence of the opposite angle. threshold+ matches overrides.
 interface StepAngleConfig {
-  rightAngleSignals:   string[];   // step-specific; at least one must match
-  wrongAngleSignals:   string[];   // if threshold+ match alongside a right signal → reject
+  strongSignals:       string[];
+  weakSignals:         string[];
+  wrongAngleSignals:   string[];
   wrongAngleThreshold: number;
   angleHint:           string;
 }
 
 const angleConfigs: Record<string, StepAngleConfig> = {
   'Front hairline': {
-    // Forward-facing anatomy
-    rightAngleSignals:   ['forehead', 'hairline', 'face', 'portrait', 'nose',
-                          'eye', 'brow', 'cheek', 'chin', 'mouth', 'selfie', 'front'],
-    // Back/side-only signals that contradict a front view
-    wrongAngleSignals:   ['nape', 'occiput', 'profile', 'back of head'],
-    wrongAngleThreshold: 2, // rare to get 2+ of these unless it's genuinely a back shot
+    // A tight crop of just the hairline and edges often returns no face labels
+    // at all,Vision gives back hair, hairstyle, black hair, skin, eyelash.
+    // The old config demanded face anatomy and rejected those, which is why
+    // this step felt strict. Forward-facing features moved into weakSignals
+    // (they still require a hair signal to count), and 'profile' dropped from
+    // the wrong list so the threshold could go to 1 as a counterweight: any
+    // explicit back-of-head label now rejects the front step outright.
+    strongSignals:       ['forehead', 'hairline', 'face', 'human face', 'selfie',
+                          'portrait', 'head shot', 'bang', 'fringe', 'eyebrow',
+                          'eyelash', 'moustache', 'mustache'],
+    weakSignals:         ['head', 'human head', 'jaw', 'chin', 'cheek', 'lip',
+                          'mouth', 'nose', 'eye', 'iris', 'skin', 'beauty',
+                          'temple', 'beard', 'facial hair', 'lace wig', 'wig',
+                          'close-up'],
+    wrongAngleSignals:   ['nape', 'occiput', 'back of head'],
+    wrongAngleThreshold: 1,
     angleHint:           'Face the camera directly so your hairline and forehead are clearly visible.',
   },
 
   'Side view': {
-    // Side-profile anatomy,ear/temple/jaw/cheek are the reliable signals.
-    // Forehead, nose, and mouth all appear naturally in a side profile (you can
-    // see them from the side) so we never penalise them. The only wrong-angle
-    // evidence for a side shot is truly back-of-head signals, which are caught
-    // by the rightAngleSignals requirement,no ear/temple means no pass.
-    rightAngleSignals:   ['ear', 'temple', 'profile', 'jaw', 'cheek',
-                          'sideburn', 'sideburns', 'side'],
+    // Ear, temple and jaw are the reliable side-profile signals. Forehead,
+    // nose and mouth are visible from the side too, so they are never penalised.
+    strongSignals:       ['ear', 'temple', 'profile', 'sideburn', 'cheekbone'],
+    weakSignals:         ['jaw', 'cheek', 'chin', 'neck', 'beard', 'facial hair'],
     wrongAngleSignals:   ['nape', 'occiput', 'back of head'],
-    wrongAngleThreshold: 2, // only block if it looks like a back shot, not a front shot
+    wrongAngleThreshold: 2,
     angleHint:           'Turn your head to the side until your ear and temple are clearly visible.',
   },
 
   'Top of head': {
-    // Top-down shots: Vision returns texture/scalp/crown or recognises the style
-    rightAngleSignals:   ['scalp', 'crown', 'texture', 'macro', 'pattern',
-                          'hair texture', 'black hair', 'brown hair', 'coil',
-                          'afro', 'braid', 'loc', 'dreadlock', 'cornrow', 'kink',
-                          'close-up'],
-    // Full-face signals → they haven't tilted forward
+    // Top-down shots: Vision returns scalp/crown or recognises the style.
+    strongSignals:       ['scalp', 'crown', 'hair texture', 'textured hair',
+                          'afro', 'braid', 'cornrow', 'loc', 'dreadlock', 'coil',
+                          'kink', 'jheri curl', 'black hair', 'brown hair',
+                          'curly hair', 'hairstyle', 'part'],
+    // These only count alongside a hair signal. On their own they matched
+    // carpets, walls and food.
+    weakSignals:         ['texture', 'pattern', 'macro', 'close-up', 'hair'],
     wrongAngleSignals:   ['face', 'eye', 'nose', 'mouth', 'forehead', 'portrait', 'selfie'],
-    wrongAngleThreshold: 2, // 2 face features together = clearly not top-down
+    wrongAngleThreshold: 2,
     angleHint:           "Tilt your head forward and point the camera straight down at your crown. Your face shouldn't be in the shot.",
   },
 
   'Back and nape': {
-    // Back-of-head anatomy or styles typically seen from behind
-    rightAngleSignals:   ['neck', 'nape', 'back', 'occiput', 'shoulder',
-                          'bun', 'ponytail', 'updo', 'braid', 'loc',
-                          'dreadlock', 'black hair', 'brown hair'],
-    // Forward-face signals → they're looking at the camera
+    // 'back' removed as a bare token: it matched "Background" on nearly
+    // every photo, which made this step pass unconditionally.
+    strongSignals:       ['nape', 'occiput', 'back of head', 'neck', 'bun',
+                          'ponytail', 'updo', 'braid', 'loc', 'dreadlock',
+                          'cornrow', 'shoulder'],
+    weakSignals:         ['black hair', 'brown hair', 'long hair', 'short hair',
+                          'hairstyle', 'hair'],
     wrongAngleSignals:   ['face', 'eye', 'nose', 'mouth', 'forehead', 'portrait', 'selfie', 'chin'],
     wrongAngleThreshold: 2,
-    angleHint:           "Show the back of your head and nape. Use a mirror or ask someone to help,your face shouldn't be visible.",
+    angleHint:           "Show the back of your head and nape. Use a mirror or ask someone to help, your face shouldn't be visible.",
   },
 };
 
 // ─── OBSERVATION GENERATOR ────────────────────────────────────────────────────
 const generateObservation = (labels: string[], stepTitle: string): string | null => {
-  const l = labels.join(' ');
-
-  if (l.includes('afro') || l.includes('natural'))
-    return 'Natural texture captured,great baseline for tracking density and moisture over time.';
-  if (l.includes('braid') || l.includes('cornrow'))
-    return "Braided style visible,we'll track tension patterns and hairline health around your style.";
-  if (l.includes('loc') || l.includes('dreadlock'))
-    return 'Locs captured,useful for monitoring scalp visibility and buildup over time.';
-  if (l.includes('curl') || l.includes('coil'))
-    return "Curl pattern visible,we'll use this to track changes in definition and moisture retention.";
-  if (l.includes('hairline') && stepTitle === 'Front hairline')
-    return 'Hairline captured,this is your reference point for tracking any changes going forward.';
+  if (anyLabel(labels, ['afro']))
+    return 'Natural texture captured, great baseline for tracking density and moisture over time.';
+  if (anyLabel(labels, ['braid', 'cornrow']))
+    return "Braided style visible, we'll track tension patterns and hairline health around your style.";
+  if (anyLabel(labels, ['loc', 'dreadlock']))
+    return 'Locs captured, useful for monitoring scalp visibility and buildup over time.';
+  if (anyLabel(labels, ['curl', 'coil']))
+    return "Curl pattern visible, we'll use this to track changes in definition and moisture retention.";
+  if (anyLabel(labels, ['hairline']) && stepTitle === 'Front hairline')
+    return 'Hairline captured, this is your reference point for tracking any changes going forward.';
   if (stepTitle === 'Top of head')
-    return 'Crown area captured,useful for monitoring any changes in density at the top.';
+    return 'Crown area captured, useful for monitoring any changes in density at the top.';
   if (stepTitle === 'Back and nape')
-    return "Nape area captured,we'll use this to track edge health and any tension-related changes.";
+    return "Nape area captured, we'll use this to track edge health and any tension-related changes.";
   if (stepTitle === 'Side view')
-    return 'Temple area captured,good reference for tracking hairline changes at the sides.';
-
+    return 'Temple area captured, good reference for tracking hairline changes at the sides.';
   return 'Photo saved as your baseline reference for this area.';
 };
 
@@ -113,11 +209,14 @@ interface ValidationResult {
 }
 
 const validateScalpPhoto = async (base64: string, stepTitle: string, gender: string = 'woman'): Promise<ValidationResult> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), VISION_TIMEOUT);
   try {
     const res = await fetch(
       `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_KEY}`,
       {
         method: 'POST',
+        signal: controller.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           requests: [{
@@ -137,78 +236,71 @@ const validateScalpPhoto = async (base64: string, stepTitle: string, gender: str
     const labels: string[] = (result?.labelAnnotations || []).map((l: any) => l.description.toLowerCase());
     console.log('[Vision] Labels:', labels);
 
+    const hasHairSignal   = anyLabel(labels, HAIR_SIGNALS);
+    const hasPersonSignal = anyLabel(labels, PERSON_SIGNALS);
+
     // ── 1. Safety ─────────────────────────────────────────────────────────
     const safe = result?.safeSearchAnnotation || {};
     if (safe.adult === 'VERY_LIKELY' || safe.violence === 'VERY_LIKELY') {
       return { valid: false, reason: 'This image was flagged. Please use a different photo.' };
     }
 
-    // ── 2. Basic person/hair presence ─────────────────────────────────────
-    // Used only to distinguish "wrong step" from "completely unrelated photo"
-    const personSignals = ['hair', 'scalp', 'skin', 'head', 'person', 'human', 'face',
-      'forehead', 'neck', 'hairline', 'hairstyle', 'afro', 'braid', 'loc', 'curl',
-      'beauty', 'close-up', 'macro', 'portrait', 'nape', 'ear', 'cheek', 'texture',
-      'black hair', 'brown hair', 'coil', 'pattern', 'jaw', 'temple', 'eye', 'nose'];
-    const hasPersonSignal = personSignals.some(k => labels.some(l => l.includes(k)));
-
-    // Clearly non-photo / fake content
-    const fakeWords = ['cartoon', 'animation', 'illustration', 'drawing', 'clipart',
-      'skull', 'diagram', '3d render', 'comic', 'manga', 'anime', 'screenshot',
-      'web page', 'website', 'graphic design', 'logo'];
-    if (fakeWords.some(k => labels.some(l => l.includes(k))) && !hasPersonSignal) {
+    // ── 2. Junk and fake content ──────────────────────────────────────────
+    // Checked BEFORE the person gate. Previously these were gated behind
+    // !hasPersonSignal, and the person list was so loose that they never ran.
+    if (!hasHairSignal && anyLabel(labels, FAKE_WORDS)) {
       return { valid: false, reason: "This doesn't look like a real photo. Please upload a close-up of your scalp or hair." };
     }
-
-    // Completely unrelated subjects
-    const hardJunk = ['food', 'meal', 'cuisine', 'landscape', 'plant', 'flower',
-      'tree', 'sky', 'furniture', 'animal', 'cat', 'dog', 'bird', 'car', 'vehicle'];
-    if (hardJunk.some(k => labels.some(l => l.includes(k))) && !hasPersonSignal) {
-      const found = labels.find(l => hardJunk.some(k => l.includes(k))) || 'something unrelated';
+    if (!hasHairSignal && anyLabel(labels, HARD_JUNK)) {
+      const found = labels.find(l => HARD_JUNK.some(k => hasLabel([l], k))) || 'something unrelated';
       return { valid: false, reason: `This photo appears to show ${found}. Please upload a photo of your scalp or hair.` };
     }
 
-    // ── 3. Angle check ────────────────────────────────────────────────────
+    // ── 3. Hard gate: is there hair or a person here at all? ───────────────
+    // This is the check that was missing entirely. Without it, any photo that
+    // dodged the junk list walked straight into the angle check.
+    if (!hasHairSignal && !hasPersonSignal) {
+      return { valid: false, reason: "We couldn't find hair or a scalp in this photo. Please upload a close-up of your scalp or hairline." };
+    }
+
+    // ── 4. Angle check ────────────────────────────────────────────────────
     const config = angleConfigs[stepTitle];
     if (config) {
-      // Men's short hair (fades, buzz cuts, thinning/shaved crowns) rarely triggers
-      // the texture/curl/style labels the top-down and back steps look for, so Vision
-      // returns generic labels like "hair", "skin", "head" instead. Without this the
-      // male Top-of-head and Back steps reject every photo. Broaden what counts as a
-      // valid signal for men on those two steps, and be a touch more forgiving on the
-      // wrong-angle threshold.
+      // Men's short hair (fades, buzz cuts, shaved crowns) rarely triggers the
+      // texture/style labels the top-down and back steps look for, so Vision
+      // returns generic labels instead. Broaden the WEAK list only, so these
+      // still require a hair signal to count, and loosen the wrong-angle bar.
       const isMale = gender === 'man';
       const maleLenientStep = isMale && (stepTitle === 'Top of head' || stepTitle === 'Back and nape');
-      const rightSignals = maleLenientStep
-        ? [...config.rightAngleSignals, 'hair', 'hairstyle', 'buzz cut', 'fade',
-           'shaved', 'bald', 'head', 'skin', 'undercut', 'hairline', 'scalp']
-        : config.rightAngleSignals;
+      const weakSignals = maleLenientStep
+        ? [...config.weakSignals, 'buzz cut', 'crew cut', 'fade', 'undercut',
+           'shaved head', 'bald', 'head', 'hairline', 'scalp', 'hairstyle']
+        : config.weakSignals;
       const wrongThreshold = maleLenientStep ? config.wrongAngleThreshold + 1 : config.wrongAngleThreshold;
 
-      const hasRightAngle = rightSignals.some(k => labels.some(l => l.includes(k)));
-      const wrongCount    = config.wrongAngleSignals.filter(k => labels.some(l => l.includes(k))).length;
+      const hasStrong  = anyLabel(labels, config.strongSignals);
+      const hasWeak    = anyLabel(labels, weakSignals);
+      const hasRight   = hasStrong || (hasWeak && hasHairSignal);
+      const wrongCount = countLabels(labels, config.wrongAngleSignals);
 
-      if (!hasRightAngle) {
-        // They uploaded a hair photo but for the wrong step
-        if (hasPersonSignal) {
-          return { valid: false, reason: config.angleHint };
-        }
-        // No hair/person at all
-        return { valid: false, reason: `We couldn't detect the right angle for this step. ${config.angleHint}` };
+      if (!hasRight) {
+        return { valid: false, reason: config.angleHint };
       }
-
-      // Has a right-angle signal but strong wrong-angle evidence overrides it
+      // Strong evidence of the opposite angle overrides a right-angle match
       if (wrongCount >= wrongThreshold) {
         return { valid: false, reason: config.angleHint };
       }
     }
 
-    // ── 4. All good ───────────────────────────────────────────────────────
+    // ── 5. All good ───────────────────────────────────────────────────────
     const observation = generateObservation(labels, stepTitle);
     return { valid: true, labels, observation: observation || undefined };
 
   } catch (err) {
     console.warn('[Vision] Validation skipped:', err);
-    return { valid: true }; // always fail open if the API is down
+    return { valid: true }; // always fail open if the API is down or times out
+  } finally {
+    clearTimeout(timer);
   }
 };
 
@@ -236,7 +328,7 @@ const getScalpSteps = (gender: string): ScalpStep[] => {
 };
 
 // ─── STYLES ───────────────────────────────────────────────────────────────────
-const sage   = '#2E4A39'; // forest green,matches app-wide palette
+const sage   = '#2E4A39'; // forest green, matches app-wide palette
 const border = '#E3E7DE';
 const itemBg = '#EDEFE7';
 const ink    = '#2d2d2d';
@@ -276,10 +368,12 @@ const ScalpBaselineCapture = ({ onComplete, onBack, gender = 'woman' }: Props) =
     const reader = new FileReader();
     reader.onload = async () => {
       const dataUrl = reader.result as string;
-      const base64  = dataUrl.split(',')[1];
       setPreviewUrl(dataUrl);
       setPhotoStep('validating');
       setObservation(null);
+      // Downscaled copy for Vision only,the full-res dataUrl above is what
+      // gets shown and saved.
+      const base64 = await compressForVision(dataUrl);
       const result = await validateScalpPhoto(base64, step.title, gender);
       if (!result.valid) {
         setAttempts(a => a + 1);
@@ -304,7 +398,7 @@ const ScalpBaselineCapture = ({ onComplete, onBack, gender = 'woman' }: Props) =
     setAttempts(0);
     if (currentStep < scalpSteps.length - 1) setCurrentStep(currentStep + 1);
     else {
-      saveBaselinePhotos(newPhotos); // persist to DB,fire-and-forget, never blocks onboarding
+      saveBaselinePhotos(newPhotos); // persist to DB, fire-and-forget, never blocks onboarding
       onComplete(newPhotos);
     }
   };
@@ -429,7 +523,7 @@ const ScalpBaselineCapture = ({ onComplete, onBack, gender = 'woman' }: Props) =
                   Use this photo anyway
                 </button>
                 <p style={{ fontSize: '0.75rem', color: muted, marginTop: 6, lineHeight: 1.5 }}>
-                  Sure it's the right area? Our check isn't perfect,you can keep this photo and continue.
+                  Sure it's the right area? Our check isn't perfect, you can keep this photo and continue.
                 </p>
               </div>
             )}

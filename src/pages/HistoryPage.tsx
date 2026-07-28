@@ -52,6 +52,11 @@ interface CheckInPhoto {
 // Vision's ONLY job here is answering "is this a real photo of a scalp/hair?"
 // It never scores, observes, or recommends. Photos are for the user's own
 // visual tracking; all health data comes from symptom check-ins.
+//
+// NOTE: this is still the ORIGINAL substring-matching validator. The equivalent
+// in ScalpBaselineCapture.tsx was rewritten (word-boundary matching, hair-presence
+// gate, downscale before the call). This one has the same leaks and the same
+// slowness. Left untouched on purpose,say the word and it gets the same treatment.
 interface PhotoValidation {
   isScalp: boolean;
   validationReason: string;
@@ -376,6 +381,11 @@ const calculateScore = (symptoms: Record<string, any> | null | undefined): numbe
 const getTriage = (c: CheckIn): 'green' | 'amber' | 'red' =>
   c.triage_result || (c.symptoms?.risk_level as any) || 'green';
 
+// A photo-only entry carries no health data. Deleting its last photo deletes
+// the whole row,there is nothing left worth keeping.
+const isPhotoOnly = (c: CheckIn) =>
+  (c.type === 'visual' || c.type === 'progress_photo') && !c.is_baseline;
+
 const triageColor = { green: '#5A9A50', amber: '#D4A866', red: '#B05040' };
 const triageBg    = { green: 'rgba(90,154,80,0.10)', amber: 'rgba(110,158,130,0.12)', red: 'rgba(176,80,64,0.10)' };
 const triageLabel = { green: 'Looking good', amber: 'Watch closely', red: 'Needs attention' };
@@ -383,12 +393,10 @@ const formatDate      = (iso: string) => new Date(iso).toLocaleDateString('en-GB
 const formatShortDate = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 
 // ─── SPARKLINE ────────────────────────────────────────────────────────────────
-// FIXED: previously required 2+ points (returned null with 1 check-in, so the
-// summary pill showed but the chart vanished) and called useState after an
-// early return — a hooks-order violation that could crash the tab when the
-// point count crossed the threshold. Now: hooks first, renders from 1 point
-// (single dot + date), line + shaded area appear from the 2nd point onward.
-const SparkLine = ({ data }: { data: { score: number; triage: string; date: string; label: string }[] }) => {
+// Renders from 1 point (single dot + date); line + shaded area appear from the
+// 2nd point onward. The baseline point draws as a hollow ring so the starting
+// position is obvious once there are several check-ins.
+const SparkLine = ({ data }: { data: { score: number; triage: string; date: string; label: string; isBaseline: boolean }[] }) => {
   const [hov, setHov] = useState<number | null>(null);
   const W = 320, H = 100, PL = 6, PR = 6, PT = 12, PB = 26;
   const iW = W - PL - PR, iH = H - PT - PB;
@@ -413,10 +421,18 @@ const SparkLine = ({ data }: { data: { score: number; triage: string; date: stri
       {line && <path d={line} fill="none" stroke={C.gold} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />}
       {pts.map((p, i) => (
         <g key={i} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)} style={{ cursor: 'default' }}>
-          <circle cx={p.x} cy={p.y} r={hov === i ? 5 : 3.5} fill={triageColor[p.triage as keyof typeof triageColor] || C.gold} stroke={C.white} strokeWidth={1.5} />
+          <circle
+            cx={p.x} cy={p.y}
+            r={hov === i ? 5.5 : p.isBaseline ? 4.5 : 3.5}
+            fill={p.isBaseline ? C.white : (triageColor[p.triage as keyof typeof triageColor] || C.gold)}
+            stroke={p.isBaseline ? (triageColor[p.triage as keyof typeof triageColor] || C.gold) : C.white}
+            strokeWidth={p.isBaseline ? 2 : 1.5}
+          />
           {hov === i && (<>
-            <rect x={p.x - 36} y={p.y - 30} width={72} height={20} rx={6} fill={C.ink} />
-            <text x={p.x} y={p.y - 16} fontSize={9} fill="#101A14" textAnchor="middle" fontFamily={dm}>{p.score} · {p.label}</text>
+            <rect x={p.x - 42} y={p.y - 30} width={84} height={20} rx={6} fill={C.ink} />
+            <text x={p.x} y={p.y - 16} fontSize={9} fill="#101A14" textAnchor="middle" fontFamily={dm}>
+              {p.isBaseline ? `${p.score} · baseline` : `${p.score} · ${p.label}`}
+            </text>
           </>)}
           <text x={p.x} y={H - 4} fontSize={8} fill={C.muted} textAnchor="middle" fontFamily={dm}>{p.date}</text>
         </g>
@@ -426,9 +442,10 @@ const SparkLine = ({ data }: { data: { score: number; triage: string; date: stri
 };
 
 // ─── PHOTO CARD ───────────────────────────────────────────────────────────────
-const PhotoCard = ({ checkin, onAddPhoto, onDeletePhoto }: {
+// Only ever rendered for entries that HAVE photos. Removing the last photo of a
+// photo-only entry removes this card entirely (see handleDeletePhoto).
+const PhotoCard = ({ checkin, onDeletePhoto }: {
   checkin: CheckIn;
-  onAddPhoto: (checkinId: string, label: string) => void;
   onDeletePhoto: (photo: CheckInPhoto) => void;
 }) => {
   const photos = checkin.photos || [];
@@ -436,7 +453,7 @@ const PhotoCard = ({ checkin, onAddPhoto, onDeletePhoto }: {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const current = photos[Math.min(idx, Math.max(photos.length - 1, 0))];
   const triage  = getTriage(checkin);
-  const isProgressPhoto = checkin.type === 'visual' || checkin.type === 'progress_photo';
+  const photoOnly = isPhotoOnly(checkin);
 
   const handleDeleteTap = () => {
     if (!confirmDelete) { setConfirmDelete(true); setTimeout(() => setConfirmDelete(false), 2500); return; }
@@ -446,26 +463,17 @@ const PhotoCard = ({ checkin, onAddPhoto, onDeletePhoto }: {
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-      style={{ ...cardStyle, overflow: 'hidden', marginBottom: 12, borderRadius: 20 }}>
-      <div style={{ height: photos.length > 0 ? 200 : 120, position: 'relative', background: current?.photo_url ? `url(${current.photo_url}) center/cover` : `linear-gradient(160deg, rgba(110,158,130,0.10) 0%, #16120D 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        {!current?.photo_url && (
-          <button onClick={() => onAddPhoto(checkin.id, `${checkin.type} · ${formatShortDate(checkin.created_at)}`)}
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer' }}>
-            <div style={{ width: 44, height: 44, borderRadius: '50%', background: C.gold10, border: `1.5px dashed ${C.goldBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Plus size={18} color={C.goldDeep} strokeWidth={2} />
-            </div>
-            <p style={{ fontFamily: dm, fontSize: 12, fontWeight: 600, color: C.gold, margin: 0 }}>Add photo to this check-in</p>
-          </button>
-        )}
+      style={{ ...cardStyle, overflow: 'hidden', borderRadius: 20, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ height: 190, position: 'relative', background: `url(${current?.photo_url}) center/cover` }}>
         {checkin.is_baseline && <div style={{ position: 'absolute', top: 12, left: 12, background: C.gold, borderRadius: 20, padding: '3px 10px', fontFamily: dm, fontSize: 10, fontWeight: 700, color: '#101A14' }}>Baseline</div>}
         {/* Triage badge only for symptom check-ins,a photo-only entry has no triage */}
-        {!isProgressPhoto && (
+        {!photoOnly && (
           <div style={{ position: 'absolute', top: 12, right: 12, background: triageBg[triage], border: `1px solid ${triageColor[triage]}40`, borderRadius: 20, padding: '3px 10px', fontFamily: dm, fontSize: 10, fontWeight: 700, color: triageColor[triage] }}>
             {triageLabel[triage]}
           </div>
         )}
 
-        {/* Delete photo,two-tap confirm; removes photo only, keeps check-in data */}
+        {/* Two-tap confirm. For a photo-only entry this removes the whole card. */}
         {current?.photo_url && (
           <button onClick={handleDeleteTap}
             style={{ position: 'absolute', bottom: 12, right: 12, display: 'flex', alignItems: 'center', gap: 5, background: confirmDelete ? 'rgba(176,80,64,0.9)' : 'rgba(0,0,0,0.5)', border: 'none', borderRadius: 100, padding: '5px 10px', cursor: 'pointer', backdropFilter: 'blur(4px)', transition: 'background 0.15s' }}>
@@ -475,7 +483,7 @@ const PhotoCard = ({ checkin, onAddPhoto, onDeletePhoto }: {
         )}
 
         {photos.length > 1 && (
-          <div style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 6, background: 'rgba(255,255,255,0.88)', borderRadius: 20, padding: '4px 8px', backdropFilter: 'blur(6px)', border: `1px solid ${C.mid}` }}>
+          <div style={{ position: 'absolute', bottom: 12, left: 12, display: 'flex', gap: 6, background: 'rgba(255,255,255,0.88)', borderRadius: 20, padding: '4px 8px', backdropFilter: 'blur(6px)', border: `1px solid ${C.mid}` }}>
             {photos.map((p, i) => (
               <button key={i} onClick={() => { setIdx(i); setConfirmDelete(false); }} style={{ fontFamily: dm, fontSize: 10, fontWeight: 600, color: idx === i ? C.goldDeep : C.muted, background: 'none', border: 'none', cursor: 'pointer', padding: '1px 6px' }}>
                 {p.region_tag || `Photo ${i + 1}`}
@@ -485,20 +493,41 @@ const PhotoCard = ({ checkin, onAddPhoto, onDeletePhoto }: {
         )}
       </div>
       <div style={{ padding: '12px 16px' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <div>
-            <p style={{ fontFamily: playfair, fontSize: 14, fontWeight: 500, color: C.ink, margin: 0 }}>{formatDate(checkin.created_at)}</p>
-            <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: '2px 0 0' }}>{isProgressPhoto ? 'progress photo' : checkin.type} · {photos.length} photo{photos.length !== 1 ? 's' : ''}</p>
-          </div>
-          <ChevronRight size={15} color={C.mid} />
-        </div>
-        {checkin.triage_reasoning && !isProgressPhoto && (
+        <p style={{ fontFamily: playfair, fontSize: 14, fontWeight: 500, color: C.ink, margin: 0 }}>{formatDate(checkin.created_at)}</p>
+        <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: '2px 0 0' }}>
+          {photoOnly ? 'progress photo' : checkin.type} · {photos.length} photo{photos.length !== 1 ? 's' : ''}
+        </p>
+        {checkin.triage_reasoning && !photoOnly && (
           <p style={{ fontFamily: dm, fontSize: 11, color: C.warm, marginTop: 8, lineHeight: 1.55, borderTop: `1px solid ${C.mid}`, paddingTop: 8 }}>{checkin.triage_reasoning}</p>
         )}
       </div>
     </motion.div>
   );
 };
+
+// Read-only card for onboarding baseline photos that only exist in local context
+// (i.e. they never made it into checkin_photos). No remove button,there is no
+// database row to delete.
+const LocalBaselineCard = ({ photo, date }: { photo: { area: string; dataUrl: string }; date: string | null }) => (
+  <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+    style={{ ...cardStyle, overflow: 'hidden', borderRadius: 20 }}>
+    <div style={{ height: 190, position: 'relative' }}>
+      <img src={photo.dataUrl} alt={photo.area} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+      <div style={{ position: 'absolute', top: 12, left: 12, background: C.gold, borderRadius: 20, padding: '3px 10px', fontFamily: dm, fontSize: 10, fontWeight: 700, color: '#101A14' }}>Baseline</div>
+    </div>
+    <div style={{ padding: '12px 16px' }}>
+      <p style={{ fontFamily: playfair, fontSize: 14, fontWeight: 500, color: C.ink, margin: 0 }}>{photo.area}</p>
+      <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: '2px 0 0' }}>{date ? formatDate(date) : 'From onboarding'}</p>
+    </div>
+  </motion.div>
+);
+
+const MetricCard = ({ label, value }: { label: string; value: string | number }) => (
+  <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(110,158,130,0.10)', borderRadius: 16, padding: '12px 14px' }}>
+    <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: 0 }}>{label}</p>
+    <p style={{ fontFamily: dm, fontSize: 20, fontWeight: 700, color: C.ink, margin: '3px 0 0' }}>{value}</p>
+  </div>
+);
 
 const EmptyState = ({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) => (
   <div style={{ textAlign: 'center', padding: '48px 24px' }}>
@@ -521,7 +550,6 @@ const HistoryPage = () => {
   const [compareA, setCompareA]     = useState(0);
   const [compareB, setCompareB]     = useState(1);
   const [showUploader, setShowUploader] = useState(false);
-  const [savedPhotos, setSavedPhotos] = useState<{ dataUrl: string; date: string }[]>([]);
   // When set, the uploader attaches the photo to this existing check-in instead of creating a new one
   const [attachTarget, setAttachTarget] = useState<{ checkinId: string; label: string } | null>(null);
 
@@ -548,14 +576,11 @@ const HistoryPage = () => {
   useEffect(() => { fetchData(); }, []);
 
   // ── Save photo: upload to storage, then attach to existing check-in OR create a new progress entry ──
+  // No local savedPhotos mirror any more,fetchData is the single source of truth,
+  // so a photo can never appear twice or survive its own deletion.
   const handlePhotoSaved = async (dataUrl: string) => {
     const target = attachTarget;
     setAttachTarget(null);
-
-    // Instant local feedback only for standalone progress photos
-    if (!target) {
-      setSavedPhotos(prev => [{ dataUrl, date: new Date().toISOString() }, ...prev]);
-    }
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -603,15 +628,24 @@ const HistoryPage = () => {
       fetchData();
     } catch (e) {
       console.error('[History] photo persist failed:', e);
+      setError('That photo could not be saved. Please try again.');
     }
   };
 
-  // ── Delete a photo: removes the photo row + storage file, leaves the check-in intact ──
+  // ── Delete a photo ──
+  // Photo row + storage file always go. If the parent was a photo-only entry and
+  // this was its last photo, the check-in row goes too,otherwise you are left
+  // with an empty ghost card. Symptom check-ins keep their row and their score;
+  // they simply stop appearing in the photos tab.
   const handleDeletePhoto = async (photo: CheckInPhoto) => {
-    // Optimistic UI: strip the photo locally first
-    setCheckins(prev => prev.map(c => c.id === photo.checkin_id
-      ? { ...c, photos: (c.photos || []).filter(p => p.id !== photo.id) }
-      : c));
+    const parent    = checkins.find(c => c.id === photo.checkin_id);
+    const remaining = (parent?.photos || []).filter(p => p.id !== photo.id);
+    const dropParent = !!parent && isPhotoOnly(parent) && remaining.length === 0;
+
+    // Optimistic UI
+    setCheckins(prev => dropParent
+      ? prev.filter(c => c.id !== photo.checkin_id)
+      : prev.map(c => c.id === photo.checkin_id ? { ...c, photos: remaining } : c));
 
     try {
       const { error: delErr } = await supabase.from('checkin_photos').delete().eq('id', photo.id);
@@ -623,6 +657,11 @@ const HistoryPage = () => {
       if (i !== -1) {
         const path = decodeURIComponent(photo.photo_url.slice(i + marker.length));
         await supabase.storage.from(UPLOAD_BUCKET).remove([path]);
+      }
+
+      if (dropParent) {
+        const { error: ciErr } = await supabase.from('checkins').delete().eq('id', photo.checkin_id);
+        if (ciErr) throw ciErr;
       }
     } catch (e) {
       console.error('[History] photo delete failed:', e);
@@ -644,12 +683,19 @@ const HistoryPage = () => {
 
   const avgScore           = scoredCheckins.length > 0 ? Math.round(scoredCheckins.reduce((a, c) => a + c.score, 0) / scoredCheckins.length) : 0;
   const checkinsWithPhotos = checkins.filter(c => (c.photos?.length || 0) > 0);
-  const sparkData          = [...scoredCheckins].reverse().map(c => ({ score: c.score, triage: c.triage, date: formatShortDate(c.created_at), label: triageLabel[c.triage] || 'Check-in' }));
+  const sparkData          = [...scoredCheckins].reverse().map(c => ({ score: c.score, triage: c.triage, date: formatShortDate(c.created_at), label: triageLabel[c.triage] || 'Check-in', isBaseline: !!c.is_baseline }));
+
+  // Onboarding baseline photos only render from local context when they never
+  // made it into checkin_photos,otherwise the same photo would show twice.
+ const baselineInDb    = checkins.some(c => c.is_baseline && (c.photos?.length || 0) > 0);
+  const localBaselines  = baselineInDb
+    ? []
+    : baselinePhotos.filter((p): p is typeof p & { dataUrl: string } => !!p.dataUrl);
+  const totalPhotoCount = checkinsWithPhotos.reduce((n, c) => n + (c.photos?.length || 0), 0) + localBaselines.length;
 
   const firstCheckinMonth  = scoredCheckins.length > 0
-    ? new Date(scoredCheckins[scoredCheckins.length - 1].created_at).toLocaleDateString('en-GB', { month: 'long' })
-    : null;
-  const recentDots = [...scoredCheckins].reverse().slice(-6);
+    ? new Date(scoredCheckins[scoredCheckins.length - 1].created_at).toLocaleDateString('en-GB', { month: 'short' })
+    : '—';
 
   // Trend needs at least 4 real symptom check-ins to say anything —
   // below that it stays quiet rather than inventing a direction.
@@ -675,11 +721,37 @@ const HistoryPage = () => {
     return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([key, count]) => ({ key, count }));
   };
 
+  // Responsive rules live here because inline styles cannot carry media queries.
+  const responsiveCss = `
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@500;600&display=swap');
+    @keyframes spin { to { transform: rotate(360deg) } }
+    .fs-shell { max-width: 1080px; margin: 0 auto; width: 100%; }
+    .fs-hero { padding: 52px 20px 24px; }
+    .fs-body { padding: 20px 20px 0; }
+    .fs-metrics { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+    .fs-photo-grid { display: grid; grid-template-columns: minmax(0,1fr); gap: 14px; }
+    .fs-health { display: grid; grid-template-columns: minmax(0,1fr); gap: 16px; align-items: start; }
+    .fs-tabs { display: flex; gap: 4px; padding: 4px; background: rgba(255,255,255,0.07); border-radius: 14px; }
+    @media (min-width: 700px) {
+      .fs-metrics { grid-template-columns: repeat(4, minmax(0,1fr)); }
+      .fs-photo-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    }
+    @media (min-width: 900px) {
+      .fs-hero { padding: 44px 24px 20px; }
+      .fs-body { padding: 20px 24px 0; }
+      .fs-health { grid-template-columns: 1.6fr 1fr; }
+      .fs-tabs { max-width: 380px; }
+    }
+    @media (min-width: 1000px) {
+      .fs-photo-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    }
+  `;
+
   if (loading) return (
     <div style={{ minHeight: '100vh', background: '#0A0908', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <style>{responsiveCss}</style>
       <div style={{ textAlign: 'center' }}>
         <div style={{ width: 32, height: 32, border: `3px solid ${C.mid}`, borderTopColor: C.gold, borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
         <p style={{ fontFamily: dm, fontSize: 13, color: C.muted }}>Loading your history…</p>
       </div>
     </div>
@@ -687,250 +759,234 @@ const HistoryPage = () => {
 
   return (
     <div style={{ minHeight: '100vh', background: '#0A0908', paddingBottom: 100, fontFamily: dm }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@500;600&display=swap');`}</style>
+      <style>{responsiveCss}</style>
 
       {/* Hero,flat black, no gradient */}
-      <div style={{ background: '#0A0908', padding: '52px 20px 24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 16 }}>
-          <div style={{ width: 7, height: 7, borderRadius: '50%', background: C.gold }} />
-          <span style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: 'rgba(110,158,130,0.9)', letterSpacing: '0.14em', textTransform: 'uppercase' }}>FolliSense</span>
-        </div>
-        <h1 style={{ fontFamily: playfair, fontSize: 26, fontWeight: 500, color: '#F5EFE6', margin: '0 0 18px', lineHeight: 1.2 }}>Progress</h1>
+      <div className="fs-hero" style={{ background: '#0A0908' }}>
+        <div className="fs-shell">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 16 }}>
+            <div style={{ width: 7, height: 7, borderRadius: '50%', background: C.gold }} />
+            <span style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: 'rgba(110,158,130,0.9)', letterSpacing: '0.14em', textTransform: 'uppercase' }}>FolliSense</span>
+          </div>
 
-        {/* Check-in summary pill,symptom check-ins only */}
-        {scoredCheckins.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(110,158,130,0.10)', border: `1px solid ${C.goldBorder}`, borderRadius: 18, padding: '12px 16px', marginBottom: 14 }}>
-            <div style={{ width: 38, height: 38, borderRadius: '50%', background: '#23392C', border: `1px solid ${C.goldBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <span style={{ fontFamily: dm, fontSize: 15, fontWeight: 700, color: '#F5EFE6' }}>{scoredCheckins.length}</span>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontFamily: dm, fontSize: 13, fontWeight: 700, color: C.ink, margin: 0 }}>
-                {scoredCheckins.length} check-in{scoredCheckins.length !== 1 ? 's' : ''}
-              </p>
-              <p style={{ fontFamily: dm, fontSize: 11, color: C.warm, margin: '2px 0 0' }}>
-                {firstCheckinMonth ? `Since ${firstCheckinMonth}` : ''} · avg score {avgScore || '—'}
-              </p>
-            </div>
-            <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
-              {recentDots.map((c, i) => (
-                <div key={i} title={`${formatShortDate(c.created_at)} · ${triageLabel[c.triage]}`}
-                  style={{ width: 9, height: 9, borderRadius: '50%', background: triageColor[c.triage] || C.gold }} />
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
+            <h1 style={{ fontFamily: playfair, fontSize: 26, fontWeight: 500, color: '#F5EFE6', margin: 0, lineHeight: 1.2 }}>Progress</h1>
+            <div className="fs-tabs" style={{ flex: '1 1 260px' }}>
+              {([{ id: 'photos' as Tab, label: 'Hair Photos', Icon: Camera }, { id: 'health' as Tab, label: 'Scalp Health', Icon: TrendingUp }]).map(t => (
+                <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 0', borderRadius: 10, fontFamily: dm, fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'all 0.2s', background: tab === t.id ? C.gold : 'transparent', color: tab === t.id ? '#101A14' : 'rgba(255,255,255,0.4)', boxShadow: tab === t.id ? `0 2px 10px rgba(110,158,130,0.4)` : 'none' }}>
+                  <t.Icon size={13} /> {t.label}
+                </button>
               ))}
             </div>
           </div>
-        )}
 
-        <div style={{ display: 'flex', gap: 4, padding: 4, background: 'rgba(255,255,255,0.07)', borderRadius: 14 }}>
-          {([{ id: 'photos' as Tab, label: 'Hair Photos', Icon: Camera }, { id: 'health' as Tab, label: 'Scalp Health', Icon: TrendingUp }]).map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 0', borderRadius: 10, fontFamily: dm, fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'all 0.2s', background: tab === t.id ? C.gold : 'transparent', color: tab === t.id ? '#101A14' : 'rgba(255,255,255,0.4)', boxShadow: tab === t.id ? `0 2px 10px rgba(110,158,130,0.4)` : 'none' }}>
-              <t.Icon size={13} /> {t.label}
-            </button>
-          ))}
+          {/* Summary metrics,replaces the old single pill */}
+          {(scoredCheckins.length > 0 || totalPhotoCount > 0) && (
+            <div className="fs-metrics">
+              <MetricCard label="Check-ins" value={scoredCheckins.length} />
+              <MetricCard label="Avg score" value={avgScore || '—'} />
+              <MetricCard label="Photos" value={totalPhotoCount} />
+              <MetricCard label="Since" value={firstCheckinMonth} />
+            </div>
+          )}
         </div>
       </div>
 
       {/* Content */}
-      <div style={{ padding: '20px 20px 0' }}>
-        {error && (
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '12px 16px', borderRadius: 14, background: 'rgba(176,80,64,0.08)', border: '1px solid rgba(176,80,64,0.2)', marginBottom: 16 }}>
-            <AlertCircle size={16} color="#B05040" />
-            <p style={{ fontFamily: dm, fontSize: 13, color: '#B05040', margin: 0 }}>{error}</p>
-          </div>
-        )}
+      <div className="fs-body">
+        <div className="fs-shell">
+          {error && (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '12px 16px', borderRadius: 14, background: 'rgba(176,80,64,0.08)', border: '1px solid rgba(176,80,64,0.2)', marginBottom: 16 }}>
+              <AlertCircle size={16} color="#B05040" />
+              <p style={{ fontFamily: dm, fontSize: 13, color: '#B05040', margin: 0 }}>{error}</p>
+            </div>
+          )}
 
-        <AnimatePresence mode="wait">
-          {tab === 'photos' && (
-            <motion.div key="photos" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-              {checkins.length === 0 && savedPhotos.length === 0 && baselinePhotos.filter(p => p.dataUrl).length === 0 ? (
-                <EmptyState icon={<Camera size={28} color={C.goldDeep} />} title="No check-ins yet" desc="Complete your first scalp check-in to start tracking your progress." />
-              ) : (
-                <>
-                  {/* ── Baseline photos from onboarding ── */}
-                  {baselinePhotos.filter(p => p.dataUrl).length > 0 && (
-                    <div style={{ marginBottom: 20 }}>
-                      <p style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 12px' }}>
-                        Baseline · {baselinePhotos.filter(p => p.dataUrl).length} photo{baselinePhotos.filter(p => p.dataUrl).length > 1 ? 's' : ''}
-                        {baselineDate && <span style={{ fontWeight: 400, marginLeft: 6 }}>· {new Date(baselineDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>}
+          <AnimatePresence mode="wait">
+            {tab === 'photos' && (
+              <motion.div key="photos" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
+                {checkinsWithPhotos.length === 0 && localBaselines.length === 0 ? (
+                  <>
+                    <EmptyState icon={<Camera size={28} color={C.goldDeep} />} title="No photos yet" desc="Add your first progress photo, or complete a check-in with photos, to start tracking visually." />
+                    <button onClick={() => { setAttachTarget(null); setShowUploader(true); }}
+                      style={{ width: '100%', maxWidth: 320, margin: '0 auto', height: 54, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, border: `1.5px dashed ${C.goldBorder}`, background: 'rgba(110,158,130,0.08)', fontFamily: dm, color: C.gold, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                      <Plus size={16} /> Add progress photo
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+                      <p style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+                        All photos · newest first
+                        {baselineRisk && (
+                          <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, marginLeft: 8, color: baselineRisk === 'green' ? C.green : baselineRisk === 'amber' ? C.goldDeep : C.red }}>
+                            baseline: {baselineRisk === 'green' ? 'looking good' : baselineRisk === 'amber' ? 'worth watching' : 'needs attention'}
+                            {baselineDate ? ` · ${formatShortDate(baselineDate)}` : ''}
+                          </span>
+                        )}
                       </p>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 4 }}>
-                        {baselinePhotos.filter(p => p.dataUrl).map((p, i) => (
-                          <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
-                            style={{ borderRadius: 16, overflow: 'hidden', position: 'relative', border: `1.5px solid ${C.mid}` }}>
-                            <img src={p.dataUrl} alt={p.area} style={{ width: '100%', height: 140, objectFit: 'cover', display: 'block' }} />
-                            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.55) 100%)' }} />
-                            <div style={{ position: 'absolute', top: 8, left: 8, background: C.gold, borderRadius: 100, padding: '2px 8px', fontFamily: dm, fontSize: 9, fontWeight: 700, color: '#101A14' }}>Baseline</div>
-                            <p style={{ position: 'absolute', bottom: 8, left: 10, fontFamily: dm, fontSize: 11, fontWeight: 600, color: '#fff', margin: 0 }}>{p.area}</p>
-                          </motion.div>
-                        ))}
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        {checkinsWithPhotos.length >= 2 && (
+                          <button onClick={() => setCompareMode(m => !m)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: dm, fontSize: 12, fontWeight: 600, padding: '6px 14px', borderRadius: 20, border: `1.5px solid ${C.mid}`, cursor: 'pointer', background: compareMode ? C.gold10 : C.surface, color: compareMode ? C.goldDeep : C.muted }}>
+                            <Layers size={12} /> {compareMode ? 'Exit compare' : 'Compare'}
+                          </button>
+                        )}
+                        <button onClick={() => { setAttachTarget(null); setShowUploader(true); }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: dm, fontSize: 12, fontWeight: 600, padding: '6px 14px', borderRadius: 20, border: `1.5px solid ${C.goldBorder}`, cursor: 'pointer', background: 'rgba(110,158,130,0.08)', color: C.gold }}>
+                          <Plus size={12} /> Add photo
+                        </button>
                       </div>
-                      {baselineRisk && (
-                        <div style={{ background: baselineRisk === 'green' ? 'rgba(90,154,80,0.10)' : baselineRisk === 'amber' ? 'rgba(110,158,130,0.10)' : 'rgba(220,112,96,0.10)', border: `1px solid ${baselineRisk === 'green' ? 'rgba(90,154,80,0.2)' : baselineRisk === 'amber' ? C.goldBorder : 'rgba(176,80,64,0.2)'}`, borderRadius: 12, padding: '10px 14px', marginTop: 8 }}>
-                          <p style={{ fontFamily: dm, fontSize: 12, color: baselineRisk === 'green' ? '#5A9A50' : baselineRisk === 'amber' ? C.goldDeep : '#B05040', margin: 0, fontWeight: 600 }}>
-                            Baseline triage: {baselineRisk === 'green' ? 'Looking good' : baselineRisk === 'amber' ? 'Worth watching' : 'Needs attention'}
-                          </p>
-                        </div>
-                      )}
                     </div>
-                  )}
 
-                  {savedPhotos.length > 0 && (
-                    <div style={{ marginBottom: 20 }}>
-                      <p style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 12px' }}>
-                        Recently added · {savedPhotos.length} photo{savedPhotos.length > 1 ? 's' : ''}
-                      </p>
-                      {savedPhotos.map((p, i) => (
-                        <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                          style={{ ...cardStyle, overflow: 'hidden', marginBottom: 12, borderRadius: 20 }}>
-                          <div style={{ height: 180, position: 'relative', overflow: 'hidden' }}>
-                            <img src={p.dataUrl} alt="Scalp" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    {compareMode && checkinsWithPhotos.length >= 2 && (
+                      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                        style={{ ...cardStyle, padding: 16, marginBottom: 16, borderRadius: 20, background: '#101A14' }}>
+                        <p style={{ fontFamily: playfair, fontSize: 14, fontWeight: 500, color: C.ink, marginBottom: 12 }}>Side-by-side</p>
+                        <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+                          {[{ val: compareA, set: setCompareA, label: 'Earlier' }, { val: compareB, set: setCompareB, label: 'Later' }].map((s, idx) => (
+                            <div key={idx} style={{ flex: 1 }}>
+                              <p style={{ fontFamily: dm, fontSize: 10, color: C.muted, marginBottom: 4 }}>{s.label}</p>
+                              <select value={s.val} onChange={e => s.set(Number(e.target.value))} style={{ width: '100%', fontFamily: dm, fontSize: 12, padding: '7px 10px', borderRadius: 10, background: 'rgba(255,255,255,0.06)', color: '#F5EFE6', border: '1px solid rgba(255,255,255,0.1)', outline: 'none' }}>
+                                {checkinsWithPhotos.map((c, i) => <option key={i} value={i}>{formatDate(c.created_at)}</option>)}
+                              </select>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          {[compareA, compareB].map((idx, col) => {
+                            const entry = checkinsWithPhotos[idx];
+                            const photo = entry?.photos?.[0];
+                            return (
+                              <div key={col}>
+                                <div style={{ height: 200, borderRadius: 14, background: photo?.photo_url ? `url(${photo.photo_url}) center/cover` : `linear-gradient(160deg, ${C.gold10}, ${C.surface})`, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1.5px solid ${C.mid}` }}>
+                                  {!photo?.photo_url && <ImageIcon size={18} color={C.gold} opacity={0.5} />}
+                                </div>
+                                <p style={{ fontFamily: dm, fontSize: 10, color: C.muted, marginTop: 6, textAlign: 'center' }}>{entry ? formatDate(entry.created_at) : ''}</p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {/* One unified grid. Only entries that actually have photos. */}
+                    <div className="fs-photo-grid">
+                      {checkinsWithPhotos.map(c => (
+                        <PhotoCard key={c.id} checkin={c} onDeletePhoto={handleDeletePhoto} />
+                      ))}
+                      {localBaselines.map((p, i) => (
+                        <LocalBaselineCard key={`local-${i}`} photo={p} date={baselineDate} />
+                      ))}
+                    </div>
+                  </>
+                )}
+              </motion.div>
+            )}
+
+            {tab === 'health' && (
+              <motion.div key="health" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
+                {scoredCheckins.length === 0 ? (
+                  <EmptyState icon={<TrendingUp size={28} color={C.goldDeep} />} title="No data yet" desc="Complete your first scalp check-in and your health trends will appear here." />
+                ) : (
+                  <>
+                    <div className="fs-health" style={{ marginBottom: 16 }}>
+                      <div style={{ background: '#101A14', border: '1px solid rgba(110,158,130,0.12)', borderRadius: 20, padding: '20px 16px 14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                          <div>
+                            <p style={{ fontFamily: playfair, fontSize: 15, fontWeight: 500, color: C.ink, margin: 0 }}>Scalp health score</p>
+                            <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: '2px 0 0' }}>
+                              {scoredCheckins.length === 1 ? 'Your starting point' : `Last ${Math.min(scoredCheckins.length, 6)} check-ins`}
+                            </p>
                           </div>
-                          <div style={{ padding: '12px 16px' }}>
-                            <p style={{ fontFamily: playfair, fontSize: 14, fontWeight: 500, color: C.ink, margin: 0 }}>{formatDate(p.date)}</p>
-                            <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: '2px 0 0' }}>Progress photo</p>
+                          <div style={{ background: C.gold10, borderRadius: 100, padding: '4px 12px', fontFamily: dm, fontSize: 12, fontWeight: 700, color: C.goldDeep, border: `1px solid ${C.goldBorder}` }}>{avgScore} avg</div>
+                        </div>
+                        <SparkLine data={sparkData.slice(-6)} />
+                        {scoredCheckins.length === 1 && (
+                          <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: '8px 0 0', lineHeight: 1.5, textAlign: 'center' }}>
+                            One point so far. Your next check-in draws the line.
+                          </p>
+                        )}
+                        <div style={{ display: 'flex', gap: 16, marginTop: 10, flexWrap: 'wrap' }}>
+                          {[{ c: '#5A9A50', l: 'Good' }, { c: C.gold, l: 'Watch' }, { c: '#B05040', l: 'Concern' }].map(x => (
+                            <div key={x.l} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                              <div style={{ width: 7, height: 7, borderRadius: '50%', background: x.c }} />
+                              <span style={{ fontFamily: dm, fontSize: 10, color: C.muted }}>{x.l}</span>
+                            </div>
+                          ))}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'transparent', border: `2px solid ${C.gold}` }} />
+                            <span style={{ fontFamily: dm, fontSize: 10, color: C.muted }}>Baseline</span>
                           </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        {getTrend() && (
+                          <div style={{ background: 'rgba(110,158,130,0.08)', border: '1px solid rgba(110,158,130,0.18)', borderRadius: 14, padding: '12px 16px', marginBottom: 12, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                            <span style={{ fontSize: 16, flexShrink: 0 }}>💡</span>
+                            <p style={{ fontFamily: dm, fontSize: 13, color: C.goldDeep, margin: 0, lineHeight: 1.6, fontWeight: 500 }}>{getTrend()}</p>
+                          </div>
+                        )}
+
+                        {getTopSymptoms().length > 0 && (
+                          <div style={{ background: '#101A14', border: '1px solid rgba(110,158,130,0.12)', borderRadius: 16, padding: '14px 16px' }}>
+                            <p style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 12px' }}>Most reported</p>
+                            {getTopSymptoms().map((s, i, arr) => (
+                              <div key={s.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: i < arr.length - 1 ? 10 : 0, marginBottom: i < arr.length - 1 ? 10 : 0, borderBottom: i < arr.length - 1 ? `1px solid ${C.mid}` : 'none' }}>
+                                <p style={{ fontFamily: dm, fontSize: 13, color: C.ink, fontWeight: 500, margin: 0, textTransform: 'capitalize' }}>{s.key}</p>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <div style={{ width: 60, height: 4, borderRadius: 2, background: C.mid, overflow: 'hidden' }}>
+                                    <div style={{ width: `${Math.min((s.count / scoredCheckins.length) * 100, 100)}%`, height: '100%', background: C.gold, borderRadius: 2 }} />
+                                  </div>
+                                  <span style={{ fontFamily: dm, fontSize: 11, color: C.muted }}>{s.count}×</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <p style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>Check-in log</p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {scoredCheckins.map((c, i) => (
+                        <motion.div key={c.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
+                          style={{ background: '#101A14', border: '1px solid rgba(110,158,130,0.10)', borderRadius: 16, padding: '13px 16px', display: 'flex', alignItems: 'center', gap: 14 }}>
+                          <div style={{ position: 'relative', width: 42, height: 42, flexShrink: 0 }}>
+                            <svg width={42} height={42} viewBox="0 0 42 42">
+                              <circle cx={21} cy={21} r={17} fill="none" stroke={C.surface} strokeWidth={3} />
+                              <circle cx={21} cy={21} r={17} fill="none" stroke={triageColor[c.triage] || C.gold} strokeWidth={3} strokeDasharray={`${(c.score / 100) * 107} 107`} strokeLinecap="round" transform="rotate(-90 21 21)" />
+                            </svg>
+                            <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: dm, fontSize: 10, fontWeight: 700, color: C.ink }}>{c.score}</span>
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontFamily: playfair, fontSize: 14, fontWeight: 500, color: C.ink, margin: 0 }}>{formatDate(c.created_at)}</p>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
+                              <span style={{ fontFamily: dm, fontSize: 11, fontWeight: 600, color: triageColor[c.triage], background: triageBg[c.triage], padding: '1px 9px', borderRadius: 100 }}>{triageLabel[c.triage]}</span>
+                              <span style={{ fontFamily: dm, fontSize: 10, color: C.muted }}>{c.is_baseline ? 'baseline' : c.type}</span>
+                              {(c.photos?.length || 0) > 0 && (
+                                <span style={{ fontFamily: dm, fontSize: 10, color: C.muted }}>· {c.photos?.length} photo{(c.photos?.length || 0) !== 1 ? 's' : ''}</span>
+                              )}
+                            </div>
+                          </div>
+                          {/* Attaching a photo to an existing check-in lives here now,
+                              the photos tab no longer renders photo-less cards. */}
+                          <button onClick={() => openAttachUploader(c.id, formatShortDate(c.created_at))}
+                            title="Add a photo to this check-in"
+                            style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(110,158,130,0.10)', border: `1px solid ${C.goldBorder}`, borderRadius: 100, padding: '5px 10px', cursor: 'pointer', flexShrink: 0 }}>
+                            <Camera size={11} color={C.gold} strokeWidth={2} />
+                            <span style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: C.gold }}>Photo</span>
+                          </button>
+                          <ChevronRight size={14} color={C.mid} />
                         </motion.div>
                       ))}
                     </div>
-                  )}
-
-                  {checkinsWithPhotos.length >= 2 && (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                      <p style={{ fontFamily: dm, fontSize: 12, color: C.muted }}>{checkinsWithPhotos.length} entries with photos</p>
-                      <button onClick={() => setCompareMode(m => !m)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: dm, fontSize: 12, fontWeight: 600, padding: '6px 14px', borderRadius: 20, border: `1.5px solid ${C.mid}`, cursor: 'pointer', background: compareMode ? C.gold10 : C.surface, color: compareMode ? C.goldDeep : C.muted }}>
-                        <Layers size={12} /> {compareMode ? 'Exit compare' : 'Compare'}
-                      </button>
-                    </div>
-                  )}
-
-                  {compareMode && checkinsWithPhotos.length >= 2 && (
-                    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                      style={{ ...cardStyle, padding: 16, marginBottom: 16, borderRadius: 20, background: '#101A14' }}>
-                      <p style={{ fontFamily: playfair, fontSize: 14, fontWeight: 500, color: C.ink, marginBottom: 12 }}>Side-by-side</p>
-                      <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-                        {[{ val: compareA, set: setCompareA, label: 'Earlier' }, { val: compareB, set: setCompareB, label: 'Later' }].map((s, idx) => (
-                          <div key={idx} style={{ flex: 1 }}>
-                            <p style={{ fontFamily: dm, fontSize: 10, color: C.muted, marginBottom: 4 }}>{s.label}</p>
-                            <select value={s.val} onChange={e => s.set(Number(e.target.value))} style={{ width: '100%', fontFamily: dm, fontSize: 12, padding: '7px 10px', borderRadius: 10, background: 'rgba(255,255,255,0.06)', color: '#F5EFE6', border: '1px solid rgba(255,255,255,0.1)', outline: 'none' }}>
-                              {checkinsWithPhotos.map((c, i) => <option key={i} value={i}>{formatDate(c.created_at)}</option>)}
-                            </select>
-                          </div>
-                        ))}
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                        {[compareA, compareB].map((idx, col) => {
-                          const entry = checkinsWithPhotos[idx];
-                          const photo = entry?.photos?.[0];
-                          return (
-                            <div key={col}>
-                              <div style={{ height: 130, borderRadius: 14, background: photo?.photo_url ? `url(${photo.photo_url}) center/cover` : `linear-gradient(160deg, ${C.gold10}, ${C.surface})`, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1.5px solid ${C.mid}` }}>
-                                {!photo?.photo_url && <ImageIcon size={18} color={C.gold} opacity={0.5} />}
-                              </div>
-                              <p style={{ fontFamily: dm, fontSize: 10, color: C.muted, marginTop: 6, textAlign: 'center' }}>{entry ? formatDate(entry.created_at) : ''}</p>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </motion.div>
-                  )}
-
-                  <div style={{ position: 'relative', paddingLeft: 28 }}>
-                    <div style={{ position: 'absolute', left: 7, top: 8, bottom: 8, width: 1.5, background: `linear-gradient(to bottom, ${C.gold}, rgba(110,158,130,0.08))` }} />
-                    {checkins.map(c => (
-                      <div key={c.id} style={{ position: 'relative' }}>
-                        <div style={{ position: 'absolute', left: -22, top: 20, width: 10, height: 10, borderRadius: '50%', background: c.is_baseline ? C.gold : C.surface, border: `2px solid ${c.is_baseline ? C.gold : C.mid}`, boxShadow: c.is_baseline ? `0 0 8px rgba(110,158,130,0.45)` : 'none' }} />
-                        <PhotoCard checkin={c} onAddPhoto={openAttachUploader} onDeletePhoto={handleDeletePhoto} />
-                      </div>
-                    ))}
-                  </div>
-
-                  <button onClick={() => { setAttachTarget(null); setShowUploader(true); }}
-                    style={{ width: '100%', height: 54, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, border: `1.5px dashed ${C.goldBorder}`, background: 'rgba(110,158,130,0.08)', fontFamily: dm, color: C.gold, fontSize: 14, fontWeight: 600, cursor: 'pointer', marginTop: 4 }}>
-                    <Plus size={16} /> Add progress photo
-                  </button>
-                </>
-              )}
-            </motion.div>
-          )}
-
-          {tab === 'health' && (
-            <motion.div key="health" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-              {scoredCheckins.length === 0 ? (
-                <EmptyState icon={<TrendingUp size={28} color={C.goldDeep} />} title="No data yet" desc="Complete your first scalp check-in and your health trends will appear here." />
-              ) : (
-                <>
-                  <div style={{ background: '#101A14', border: '1px solid rgba(110,158,130,0.12)', borderRadius: 20, padding: '20px 16px 14px', marginBottom: 16 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                      <div>
-                        <p style={{ fontFamily: playfair, fontSize: 15, fontWeight: 500, color: C.ink, margin: 0 }}>Scalp health score</p>
-                        <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: '2px 0 0' }}>Last {Math.min(scoredCheckins.length, 6)} check-in{Math.min(scoredCheckins.length, 6) !== 1 ? 's' : ''}</p>
-                      </div>
-                      <div style={{ background: C.gold10, borderRadius: 100, padding: '4px 12px', fontFamily: dm, fontSize: 12, fontWeight: 700, color: C.goldDeep, border: `1px solid ${C.goldBorder}` }}>{avgScore} avg</div>
-                    </div>
-                    <SparkLine data={sparkData.slice(-6)} />
-                    <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
-                      {[{ c: '#5A9A50', l: 'Good' }, { c: C.gold, l: 'Watch' }, { c: '#B05040', l: 'Concern' }].map(x => (
-                        <div key={x.l} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                          <div style={{ width: 7, height: 7, borderRadius: '50%', background: x.c }} />
-                          <span style={{ fontFamily: dm, fontSize: 10, color: C.muted }}>{x.l}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {getTrend() && (
-                    <div style={{ background: 'rgba(110,158,130,0.08)', border: '1px solid rgba(110,158,130,0.18)', borderRadius: 14, padding: '12px 16px', marginBottom: 16, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                      <span style={{ fontSize: 16, flexShrink: 0 }}>💡</span>
-                      <p style={{ fontFamily: dm, fontSize: 13, color: C.goldDeep, margin: 0, lineHeight: 1.6, fontWeight: 500 }}>{getTrend()}</p>
-                    </div>
-                  )}
-
-                  {getTopSymptoms().length > 0 && (
-                    <>
-                      <p style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>Most reported symptoms</p>
-                      <div style={{ background: '#101A14', border: '1px solid rgba(110,158,130,0.12)', borderRadius: 16, padding: '14px 16px', marginBottom: 16 }}>
-                        {getTopSymptoms().map((s, i, arr) => (
-                          <div key={s.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: i < arr.length - 1 ? 10 : 0, marginBottom: i < arr.length - 1 ? 10 : 0, borderBottom: i < arr.length - 1 ? `1px solid ${C.mid}` : 'none' }}>
-                            <p style={{ fontFamily: dm, fontSize: 13, color: C.ink, fontWeight: 500, margin: 0, textTransform: 'capitalize' }}>{s.key}</p>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <div style={{ width: 60, height: 4, borderRadius: 2, background: C.mid, overflow: 'hidden' }}>
-                                <div style={{ width: `${Math.min((s.count / scoredCheckins.length) * 100, 100)}%`, height: '100%', background: C.gold, borderRadius: 2 }} />
-                              </div>
-                              <span style={{ fontFamily: dm, fontSize: 11, color: C.muted }}>{s.count}×</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-
-                  <p style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>Check-in log</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {scoredCheckins.map((c, i) => (
-                      <motion.div key={c.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
-                        style={{ background: '#101A14', border: '1px solid rgba(110,158,130,0.10)', borderRadius: 16, padding: '13px 16px', display: 'flex', alignItems: 'center', gap: 14 }}>
-                        <div style={{ position: 'relative', width: 42, height: 42, flexShrink: 0 }}>
-                          <svg width={42} height={42} viewBox="0 0 42 42">
-                            <circle cx={21} cy={21} r={17} fill="none" stroke={C.surface} strokeWidth={3} />
-                            <circle cx={21} cy={21} r={17} fill="none" stroke={triageColor[c.triage] || C.gold} strokeWidth={3} strokeDasharray={`${(c.score / 100) * 107} 107`} strokeLinecap="round" transform="rotate(-90 21 21)" />
-                          </svg>
-                          <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: dm, fontSize: 10, fontWeight: 700, color: C.ink }}>{c.score}</span>
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <p style={{ fontFamily: playfair, fontSize: 14, fontWeight: 500, color: C.ink, margin: 0 }}>{formatDate(c.created_at)}</p>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
-                            <span style={{ fontFamily: dm, fontSize: 11, fontWeight: 600, color: triageColor[c.triage], background: triageBg[c.triage], padding: '1px 9px', borderRadius: 100 }}>{triageLabel[c.triage]}</span>
-                            <span style={{ fontFamily: dm, fontSize: 10, color: C.muted }}>{c.type}</span>
-                          </div>
-                        </div>
-                        <ChevronRight size={14} color={C.mid} />
-                      </motion.div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
+                  </>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
 
       <AnimatePresence>
