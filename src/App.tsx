@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route,Navigate, useNavigate, useLocation } from "react-router-dom";
 import { AppProvider, useApp } from "./contexts/AppContext";
 import Layout from "./components/Layout";
 import SplashScreen from "./pages/SplashScreen";
@@ -51,6 +51,9 @@ import Terms from './pages/Terms';
 import GoodbyePage from './pages/GoodbyePage';
 import AuthCallback from '@/pages/AuthCallback';
 import ResetPasswordPage from './pages/ResetPassword';
+import AdminPage from './pages/AdminPage';
+import UserGeneratedProducts from './pages/UserGeneratedProducts';
+import ProductDetailPage from './pages/ProductDetailPage';
 
 const queryClient = new QueryClient();
 
@@ -175,8 +178,6 @@ const App = () => {
                   <Route path="/results" element={<RiskOutput />} />
                   <Route path="/clinician-summary" element={<ClinicianSummary />} />
                   <Route path="/health-profile" element={<HealthProfile />} />
-                  <Route path="/products" element={<ProductDirectory />} />
-                  <Route path="/shop" element={<ShopPage />} />
                   <Route path="/research" element={<ResearchProgramme />} />
                   <Route path="/find-specialist" element={<FindSpecialist />} />
                   <Route path="/history" element={<HistoryPage />} />
@@ -201,6 +202,11 @@ const App = () => {
                   <Route path="/auth/callback" element={<AuthCallback />} />
                   <Route path="/privacy" element={<PrivacyPolicy />} />
                  <Route path="/reset-password" element={<ResetPasswordPage />} /> 
+                 <Route path="/admin" element={<AdminPage />} />
+                 <Route path="/products" element={<UserGeneratedProducts />} />
+                 <Route path="/product/:slug" element={<ProductDetailPage />} />
+                 <Route path="/product-guide" element={<ProductDirectory />} />
+                 <Route path="/shop" element={<Navigate to="/products" replace />} />
                 </Routes>
               </Layout>
             </SessionGuard>

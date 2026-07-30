@@ -537,7 +537,7 @@ const ProfilePage = () => {
               </div>
             )}
             <div style={{ padding: '12px 18px', borderTop: `1px solid ${C.mid}` }}>
-              <button onClick={() => navigate('/products')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: dm, fontSize: 12, fontWeight: 700, color: C.goldDeep }}>Browse product guide →</button>
+              <button onClick={() => navigate('/product-guide')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: dm, fontSize: 12, fontWeight: 700, color: C.goldDeep }}>Browse product guide →</button>
             </div>
           </ProfileSection>
 

@@ -91,13 +91,21 @@ export default function WelcomeScreen() {
     touchX.current = null;
   };
 
+  // Both screens stack in the same box and cross-fade. inset: 0 is kept
+  // intact here on purpose, overriding `left` on a child while `right: 0`
+  // is still applied is what collapsed the auth screen to half width.
+  // Centering is handled by alignItems, and width is capped by an inner
+  // container instead.
   const screenStyle = (on: boolean): React.CSSProperties => ({
     position: 'absolute',
     inset: 0,
-    padding: '54px 26px 30px',
+    padding: 'calc(54px + env(safe-area-inset-top)) 26px calc(30px + env(safe-area-inset-bottom))',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
+    // Short phones in landscape, or large accessibility text, would clip
+    // the carousel without this.
+    overflowY: 'auto',
     opacity: on ? 1 : 0,
     pointerEvents: on ? 'auto' : 'none',
     transition: 'opacity .45s ease',
@@ -120,7 +128,7 @@ export default function WelcomeScreen() {
   };
 
   return (
-    // Fills the whole viewport,no separate dark shell, content just
+    // Fills the whole viewport, no separate dark shell, content just
     // centers itself within the full-width cream surface on larger screens.
     <div
       style={{
@@ -164,7 +172,20 @@ export default function WelcomeScreen() {
         >
           <button
             onClick={() => setScreen('auth')}
-            style={{ position: 'absolute', top: 22, right: 24, fontSize: 13.5, fontWeight: 600, color: T.muted, cursor: 'pointer', padding: '6px 10px', background: 'none', border: 'none', fontFamily: instrument }}
+            style={{
+              position: 'absolute',
+              top: 'calc(22px + env(safe-area-inset-top))',
+              right: 24,
+              fontSize: 13.5,
+              fontWeight: 600,
+              color: T.muted,
+              cursor: 'pointer',
+              padding: '6px 10px',
+              background: 'none',
+              border: 'none',
+              fontFamily: instrument,
+              zIndex: 2,
+            }}
           >
             Skip
           </button>
@@ -185,6 +206,7 @@ export default function WelcomeScreen() {
                   style={{
                     width: 168,
                     height: 168,
+                    flexShrink: 0,
                     borderRadius: '50%',
                     background: T.tint,
                     display: 'flex',
@@ -207,7 +229,7 @@ export default function WelcomeScreen() {
             ))}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 18, paddingBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 18, paddingTop: 24, paddingBottom: 6, flexShrink: 0 }}>
             <div style={{ display: 'flex', gap: 7 }}>
               {CARDS.map((_, i) => (
                 <i
@@ -218,38 +240,48 @@ export default function WelcomeScreen() {
             </div>
             <button
               onClick={nextCard}
-              style={{ width: 52, height: 52, borderRadius: '50%', background: T.action, color: T.actionText, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, cursor: 'pointer', border: 'none' }}
+              style={{ width: 52, height: 52, flexShrink: 0, borderRadius: '50%', background: T.action, color: T.actionText, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, cursor: 'pointer', border: 'none' }}
             >
               →
             </button>
           </div>
         </div>
 
-        <div style={{ ...screenStyle(screen === 'auth'), justifyContent: 'center', maxWidth: 420, left: '50%', transform: 'translateX(-50%)' }}>
-          <img src={wordmark} alt="FolliSense" style={{ width: 190, marginBottom: 14 }} />
-          <div style={{ fontSize: 15, color: T.muted, marginBottom: 38 }}>
-            Healthy hair starts with knowing.
-          </div>
+        <div style={{ ...screenStyle(screen === 'auth'), justifyContent: 'center' }}>
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 420,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+            }}
+          >
+            <img src={wordmark} alt="FolliSense" style={{ width: 190, maxWidth: '60%', marginBottom: 14 }} />
+            <div style={{ fontSize: 15, color: T.muted, marginBottom: 38, textAlign: 'center' }}>
+              Healthy hair starts with knowing.
+            </div>
 
-          <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <button
-              onClick={() => navigate('/signup')}
-              style={{ ...btnBase, background: T.action, color: T.actionText }}
-            >
-              Create Account <span>→</span>
-            </button>
-            <button
-              onClick={() => navigate('/login')}
-              style={{ ...btnBase, background: T.card, color: T.text, border: `1px solid ${T.border}` }}
-            >
-              Log In <span>→</span>
-            </button>
-          </div>
+            <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <button
+                onClick={() => navigate('/signup')}
+                style={{ ...btnBase, background: T.action, color: T.actionText }}
+              >
+                Create Account <span>→</span>
+              </button>
+              <button
+                onClick={() => navigate('/login')}
+                style={{ ...btnBase, background: T.card, color: T.text, border: `1px solid ${T.border}` }}
+              >
+                Log In <span>→</span>
+              </button>
+            </div>
 
-          <div style={{ marginTop: 18, fontSize: 11.5, color: T.faint, textAlign: 'center' }}>
-            By continuing, you agree to our{' '}
-            <span onClick={() => navigate('/terms')} style={{ color: T.muted, textDecoration: 'underline', cursor: 'pointer' }}>Terms</span> and{' '}
-            <span onClick={() => navigate('/privacy')} style={{ color: T.muted, textDecoration: 'underline', cursor: 'pointer' }}>Privacy Policy</span>.
+            <div style={{ marginTop: 18, fontSize: 11.5, color: T.faint, textAlign: 'center' }}>
+              By continuing, you agree to our{' '}
+              <span onClick={() => navigate('/terms')} style={{ color: T.muted, textDecoration: 'underline', cursor: 'pointer' }}>Terms</span> and{' '}
+              <span onClick={() => navigate('/privacy')} style={{ color: T.muted, textDecoration: 'underline', cursor: 'pointer' }}>Privacy Policy</span>.
+            </div>
           </div>
         </div>
       </div>

@@ -1,382 +1,233 @@
 import { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  ArrowLeft, ShoppingCart, ExternalLink, Star,
-  Bookmark, BookmarkCheck, Share2,
-  Droplets, Zap, Leaf, FlaskConical, TrendingUp,
-  CheckCircle2, Clock, Sparkles,
-} from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { ArrowLeft, Search, Plus, Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
-import { useProductInteractions } from '@/hooks/useProductInteractions';
-import { RecommendedProduct } from '@/hooks/useRecommendationEngine';
-import { toSlug } from '@/lib/slugify';
+import { isNonCompliant } from '@/lib/compliance';
 
+interface ProductEntry {
+  name: string;
+  desc: string;
+  tag: 'Scalp' | 'Hair' | 'Both';
+}
 
-const PHASE_META: Record<string, { label: string; color: string; bg: string; icon: any }> = {
-  wash_day: { label: 'Wash Day', color: 'text-blue-700', bg: 'bg-blue-50', icon: Droplets },
-  post_wash: { label: 'Days 1–3', color: 'text-green-700', bg: 'bg-green-50', icon: Leaf },
-  mid_cycle: { label: 'Mid-cycle', color: 'text-amber-700', bg: 'bg-amber-50', icon: Clock },
-  pre_wash: { label: 'Pre-wash', color: 'text-purple-700', bg: 'bg-purple-50', icon: Sparkles },
-};
+interface ProductCategory {
+  name: string;
+  products: ProductEntry[];
+}
 
-const STRENGTH_META: Record<string, { label: string; desc: string; color: string; bg: string }> = {
-  low: { label: 'Gentle', desc: 'Safe for everyday use', color: 'text-emerald-700', bg: 'bg-emerald-50' },
-  medium: { label: 'Standard', desc: 'Regular strength formula', color: 'text-amber-700', bg: 'bg-amber-50' },
-  high: { label: 'Strong', desc: 'Potent,use as directed', color: 'text-orange-700', bg: 'bg-orange-50' },
-  clinical: { label: 'Clinical', desc: 'Dermatologist or pharmacist grade', color: 'text-blue-700', bg: 'bg-blue-50' },
-};
+// ---------------------------------------------------------------
+// NOTE (compliance): Per the FolliSense SaMD Compliance Harness,
+// this directory lists COSMETIC products only. No medicines
+// (minoxidil, ketoconazole, coal tar, selenium sulfide, etc.),
+// no disease names, no treatment claims. Descriptions use cosmetic
+// framing ("helps with the look and feel of...") not medical claims
+// ("treats..."). The isNonCompliant() filter below is a safety net:
+// if a banned entry is ever added, it won't render.
+// ---------------------------------------------------------------
 
-const CATEGORY_ICONS: Record<string, any> = {
-  'Scalp Oil': Droplets,
-  'Shampoo': Zap,
-  'Conditioner': Leaf,
-  'Leave-in': Leaf,
-  'Scalp Treatment': FlaskConical,
-  'Hair Growth': TrendingUp,
-  'Edge Control': Sparkles,
-  'Styling': Sparkles,
-  'Supplement': FlaskConical,
-};
+const productDirectory: ProductCategory[] = [
+  {
+    name: 'Scalp oils',
+    products: [
+      { name: 'Tea tree oil', desc: 'A refreshing oil often used to help with flaking and buildup on the scalp', tag: 'Scalp' },
+      { name: 'Rosemary oil (e.g., Mielle Rosemary Mint)', desc: 'Popular scalp oil with an invigorating feel that many use as part of a growth-support routine', tag: 'Scalp' },
+      { name: 'Castor oil (e.g., Jamaican Mango & Lime JBCO)', desc: 'Thick, moisturising oil often used to nourish edges and coat the strands', tag: 'Scalp' },
+      { name: 'Peppermint oil', desc: 'Cooling oil that gives a fresh, tingly feel and helps soothe an itchy-feeling scalp', tag: 'Scalp' },
+      { name: 'Jojoba oil (scalp use)', desc: 'Mimics the scalp\'s natural sebum and helps balance how oily or dry it feels', tag: 'Both' },
+      { name: 'Neem oil', desc: 'Traditional scalp oil often used to comfort flaky, irritated-feeling areas', tag: 'Scalp' },
+      { name: 'Coconut oil (scalp use)', desc: 'Rich, moisturising oil that softens the hair and scalp', tag: 'Both' },
+    ],
+  },
+  {
+    name: 'Scalp care',
+    products: [
+      { name: 'Multi-peptide serum (e.g., The Ordinary)', desc: 'Peptide-based scalp serum used to support the look of fuller, denser-looking hair', tag: 'Scalp' },
+      { name: 'Clarifying shampoo (e.g., SheaMoisture, Neutrogena Anti-Residue)', desc: 'Deep-cleansing shampoo that removes product buildup and leaves the scalp feeling fresh', tag: 'Scalp' },
+      { name: 'Tea tree shampoo', desc: 'Gentle, refreshing cleanse for a scalp that feels itchy or congested', tag: 'Scalp' },
+      { name: 'Scalp scrub / exfoliator', desc: 'Physical exfoliant that lifts buildup and flaking for a cleaner-feeling scalp', tag: 'Scalp' },
+      { name: 'Rosemary & mint scalp rinse', desc: 'Invigorating rinse that leaves the scalp feeling clean and refreshed', tag: 'Scalp' },
+    ],
+  },
+  {
+    name: 'Hair oils and butters',
+    products: [
+      { name: 'Argan oil (e.g., Moroccanoil)', desc: 'Lightweight oil that adds shine and reduces the look of frizz', tag: 'Hair' },
+      { name: 'Jojoba oil', desc: 'Light oil that moisturises without heaviness', tag: 'Hair' },
+      { name: 'Hair oil blend (e.g., Mielle, The Ordinary)', desc: 'Multi-oil blend for moisture and shine', tag: 'Hair' },
+      { name: 'Shea butter', desc: 'Rich moisturiser for dry, coily hair', tag: 'Hair' },
+      { name: 'Mango butter', desc: 'Softening butter that helps hair hold on to moisture', tag: 'Hair' },
+      { name: 'Avocado oil', desc: 'Penetrating oil rich in vitamins for dry-feeling hair', tag: 'Hair' },
+      { name: 'Grapeseed oil', desc: 'Light sealant that adds shine without weight', tag: 'Hair' },
+      { name: 'Marula oil', desc: 'Fast-absorbing oil that softens and adds shine', tag: 'Hair' },
+    ],
+  },
+  {
+    name: 'Styling products',
+    products: [
+      { name: 'Edge control (e.g., Ebin, Got2b, Gorilla Snot)', desc: 'Holds edges in place with a smooth finish', tag: 'Hair' },
+      { name: 'Styling gel (e.g., Eco Styler, Uncle Funky\'s Daughter)', desc: 'Flexible hold for wash-and-gos, twist-outs, and sets', tag: 'Hair' },
+      { name: 'Curl cream (e.g., Eco Style, Twist by Ouidad, Cantu)', desc: 'Defines curls while adding moisture', tag: 'Hair' },
+      { name: 'Mousse', desc: 'Lightweight hold and volume for curls and coils', tag: 'Hair' },
+      { name: 'Twist butter', desc: 'Holds twists and adds moisture during protective styling', tag: 'Hair' },
+      { name: 'Loc gel or butter', desc: 'Maintains and moisturises locs', tag: 'Hair' },
+      { name: 'Heat protectant (e.g., Chi 44 Iron Guard, TRESemme, GHD)', desc: 'Shields hair from heat during styling', tag: 'Hair' },
+    ],
+  },
+  {
+    name: 'Treatments and conditioners',
+    products: [
+      { name: 'Deep conditioner, moisture (e.g., SheaMoisture Manuka Honey, Amika Soulfood)', desc: 'Intense hydration for dry, brittle-feeling hair', tag: 'Hair' },
+      { name: 'Deep conditioner, protein (e.g., Aphogee, SheaMoisture Manuka Honey & Yogurt)', desc: 'Strengthens the feel of the hair and helps reduce breakage', tag: 'Hair' },
+      { name: 'Leave-in conditioner (e.g., SheaMoisture, Cantu, Aunt Jackie\'s)', desc: 'Daily moisture and detangling for hair', tag: 'Hair' },
+      { name: 'Protein treatment (e.g., Aphogee Two-Step, Curlsmith)', desc: 'Reinforces hair with protein to improve strength and reduce breakage', tag: 'Hair' },
+      { name: 'Bond repair treatment (e.g., Olaplex No.3, K18)', desc: 'Helps restore the feel of hair stressed by chemicals or heat', tag: 'Hair' },
+      { name: 'Hot oil treatment', desc: 'Warm oil applied to hair and scalp for deep conditioning', tag: 'Both' },
+      { name: 'Rice water rinse', desc: 'Protein-rich rinse that strengthens the feel of hair and adds shine', tag: 'Hair' },
+      { name: 'Apple cider vinegar rinse', desc: 'Clarifies buildup and leaves hair and scalp feeling balanced', tag: 'Both' },
+    ],
+  },
+];
 
-const USAGE_TIPS: Record<string, string> = {
-  wash_day: 'Apply to wet or damp hair on wash day. Work through lengths from roots to ends and leave for the directed time before rinsing thoroughly.',
-  post_wash: 'Apply to freshly washed hair while still damp. Section hair and work product through evenly, paying attention to ends.',
-  mid_cycle: 'Apply directly to scalp through your partings. Use fingertips to massage gently in small circular motions.',
-  pre_wash: 'Apply 30–60 minutes before shampooing. Cover hair with a shower cap and let it absorb fully before washing.',
-};
-
-const Stars = ({ rating, size = 'sm' }: { rating: number; size?: 'sm' | 'lg' }) => {
-  const px = size === 'lg' ? 15 : 11;
-  return (
-    <div className="flex items-center gap-0.5">
-      {[1,2,3,4,5].map(i => (
-        <Star key={i} size={px}
-          className={i <= Math.round(rating) ? 'text-amber-400 fill-amber-400' : 'text-gray-200 fill-gray-200'}
-        />
-      ))}
-      <span className={`ml-1 font-semibold text-muted-foreground ${size === 'lg' ? 'text-sm' : 'text-[10px]'}`}>
-        {rating.toFixed(1)}
-      </span>
-    </div>
-  );
-};
-
-// ── Main page ─────────────────────────────────────────────────
-const ProductDetailPage = () => {
+const ProductDirectory = () => {
   const navigate = useNavigate();
-  const location = useLocation();
-  const { user } = useApp();
-  const { recordInteraction, savedIds } = useProductInteractions(user?.id);
+  const [searchParams] = useSearchParams();
+  const fromOnboarding = searchParams.get('from') === 'onboarding';
+  const typeFilter = searchParams.get('type'); // 'scalp' | 'hair' | null
+  const { onboardingData, setOnboardingData } = useApp();
 
-  const product: RecommendedProduct | undefined = location.state?.product;
+  const [search, setSearch] = useState('');
+  const [expandedCats, setExpandedCats] = useState<string[]>([productDirectory[0].name]);
+  const [addedProducts, setAddedProducts] = useState<Set<string>>(new Set());
 
-  const [saved, setSaved] = useState(savedIds.has(product?.id || ''));
-  const [activeTab, setActiveTab] = useState<'about' | 'usage'>('about');
+  const userScalpProducts = onboardingData.scalpProducts || [];
+  const userHairProducts = onboardingData.hairProducts || [];
 
-  if (!product) {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-3 px-6">
-        <div className="w-14 h-14 rounded-full bg-accent flex items-center justify-center">
-          <Droplets size={22} className="text-muted-foreground" />
-        </div>
-        <p className="text-sm font-semibold text-foreground">Product not found</p>
-        <button onClick={() => navigate(-1)} className="text-xs text-primary font-semibold">Go back</button>
-      </div>
-    );
-  }
-
-  const CategoryIcon = CATEGORY_ICONS[product.category] || Droplets;
-  const strengthMeta = product.strengthLevel ? STRENGTH_META[product.strengthLevel] : null;
-
-  const handleSave = async () => {
-    const nowSaved = !saved;
-    setSaved(nowSaved);
-    await recordInteraction(product.id, nowSaved ? 'saved' : 'skipped', product.triggeredBy);
+  const toggleCategory = (name: string) => {
+    setExpandedCats(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
   };
 
-  const handleShare = async () => {
-    const url = product.jumiaUrl || product.amazonUrl || window.location.href;
-    const text = `${product.name} by ${product.brand},KSh ${product.priceKsh.toLocaleString()}`;
-    if (navigator.share) {
-      await navigator.share({ title: product.name, text, url }).catch(() => {});
-    } else {
-      await navigator.clipboard.writeText(`${text}\n${url}`);
+  const addProduct = (product: ProductEntry) => {
+    setAddedProducts(prev => new Set(prev).add(product.name));
+
+    if (product.tag === 'Scalp' || product.tag === 'Both') {
+      if (!userScalpProducts.includes(product.name)) {
+        setOnboardingData({ ...onboardingData, scalpProducts: [...userScalpProducts, product.name] });
+      }
+    }
+    if (product.tag === 'Hair' || product.tag === 'Both') {
+      if (!userHairProducts.includes(product.name)) {
+        setOnboardingData({ ...onboardingData, hairProducts: [...userHairProducts, product.name] });
+      }
     }
   };
 
-  const handleBuy = () => recordInteraction(product.id, 'clicked', product.triggeredBy);
+  const isAdded = (name: string) => {
+    return addedProducts.has(name) || userScalpProducts.includes(name) || userHairProducts.includes(name);
+  };
+
+  const filteredDirectory = productDirectory
+    .map(cat => ({
+      ...cat,
+      products: cat.products.filter(p => {
+        // ── Compliance safety net: never render a banned/medicine entry ──
+        if (isNonCompliant({ name: p.name, description: p.desc })) return false;
+
+        const matchesSearch = !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.desc.toLowerCase().includes(search.toLowerCase());
+        const matchesType = !typeFilter || (typeFilter === 'scalp' && (p.tag === 'Scalp' || p.tag === 'Both')) || (typeFilter === 'hair' && (p.tag === 'Hair' || p.tag === 'Both'));
+        return matchesSearch && matchesType;
+      }),
+    }))
+    .filter(cat => cat.products.length > 0);
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-[430px] mx-auto">
-
-        {/* ── Hero image ──────────────────────────────────── */}
-        <div className="relative overflow-hidden bg-gray-100" style={{ height: 340 }}>
-          <img
-            src={product.imageUrl}
-            alt={product.name}
-            className="w-full h-full object-cover"
-            onError={e => {
-              (e.target as HTMLImageElement).src =
-                'https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?w=400&h=400&fit=crop';
-            }}
-          />
-
-          {/* Dark gradient at bottom for text readability */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-transparent" />
-
-          {/* Top navigation bar */}
-          <div className="absolute top-0 inset-x-0 flex items-center justify-between px-4 pt-12 pb-4">
-            <button onClick={() => navigate(-1)}
-              className="w-10 h-10 rounded-full bg-white/90 backdrop-blur-sm shadow-md flex items-center justify-center">
-              <ArrowLeft size={18} className="text-foreground" strokeWidth={2} />
-            </button>
-            <div className="flex gap-2">
-              <button onClick={handleSave}
-                className="w-10 h-10 rounded-full bg-white/90 backdrop-blur-sm shadow-md flex items-center justify-center transition-transform active:scale-90">
-                {saved
-                  ? <BookmarkCheck size={18} className="text-primary" />
-                  : <Bookmark size={18} className="text-gray-600" strokeWidth={1.8} />
-                }
-              </button>
-              <button onClick={handleShare}
-                className="w-10 h-10 rounded-full bg-white/90 backdrop-blur-sm shadow-md flex items-center justify-center">
-                <Share2 size={17} className="text-gray-600" strokeWidth={1.8} />
-              </button>
-            </div>
+      <div className="max-w-[430px] mx-auto px-6">
+        <div className="flex items-center gap-3 py-4">
+          <button onClick={() => navigate(-1)} className="p-2 -ml-2">
+            <ArrowLeft size={22} className="text-foreground" strokeWidth={1.8} />
+          </button>
+          <div>
+            <h1 className="text-lg font-semibold text-foreground">Product Guide</h1>
+            <p className="text-xs text-muted-foreground">Browse common scalp and hair products</p>
           </div>
-
-          {/* Badge on image */}
-          {product.badge && (
-            <div
-              className="absolute bottom-4 left-4 text-[10px] font-bold px-3 py-1 rounded-full text-white shadow-lg"
-              style={{ backgroundColor: product.badgeColor }}
-            >
-              {product.badge}
-            </div>
-          )}
-
-          {/* Strength pill on image */}
-          {strengthMeta && (
-            <div className={`absolute bottom-4 right-4 text-[10px] font-bold px-3 py-1 rounded-full ${strengthMeta.bg} ${strengthMeta.color}`}>
-              {strengthMeta.label}
-            </div>
-          )}
         </div>
 
-        {/* ── Content card,pulls up over the image ──────── */}
-        <div className="bg-background rounded-t-3xl -mt-5 relative z-10 px-5 pt-5 pb-36 space-y-5">
+        {/* Search */}
+        <div className="relative mb-6">
+          <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" strokeWidth={1.8} />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by product name, type, or ingredient"
+            className="w-full h-12 pl-11 pr-4 rounded-2xl border-2 border-border bg-card text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors"
+          />
+        </div>
 
-          {/* Category + brand + name + price ──────────────── */}
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center">
-                <CategoryIcon size={13} className="text-primary" />
-              </div>
-              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                {product.brand} · {product.category}
-              </span>
-            </div>
-
-            <h1 className="text-xl font-bold text-foreground leading-snug mb-3">
-              {product.name}
-            </h1>
-
-            <div className="flex items-center justify-between">
-              <Stars rating={product.rating} size="lg" />
-              <span className="text-2xl font-black text-foreground">
-                KSh {product.priceKsh.toLocaleString()}
-              </span>
-            </div>
-          </div>
-
-          {/* Why recommended ────────────────────────────── */}
-          {product.recommendationReason && (
-            <div className="flex items-start gap-3 bg-primary/5 border border-primary/10 rounded-2xl px-4 py-3.5">
-              <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <Sparkles size={13} className="text-primary" />
-              </div>
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-primary mb-0.5">
-                  Why it was recommended
-                </p>
-                <p className="text-xs text-foreground/80 leading-relaxed">
-                  {product.recommendationReason}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Concern tags ───────────────────────────────── */}
-          {product.concerns?.length > 0 && (
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
-                Targets
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {product.concerns.map(c => (
-                  <span key={c}
-                    className="flex items-center gap-1 text-xs px-3 py-1 rounded-full bg-accent text-foreground font-medium">
-                    <CheckCircle2 size={10} className="text-primary" />
-                    {c}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Usage phases ───────────────────────────────── */}
-          {product.usagePhase?.length > 0 && (
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
-                Best used during
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {product.usagePhase.map(phase => {
-                  const meta = PHASE_META[phase];
-                  const Icon = meta?.icon || Clock;
-                  return (
-                    <div key={phase}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full ${meta?.bg || 'bg-accent'}`}>
-                      <Icon size={12} className={meta?.color || 'text-foreground'} />
-                      <span className={`text-xs font-semibold ${meta?.color || 'text-foreground'}`}>
-                        {meta?.label || phase.replace('_', ' ')}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Tab bar ────────────────────────────────────── */}
-          <div className="flex bg-gray-100 rounded-2xl p-1">
-            {(['about', 'usage'] as const).map(tab => (
-              <button key={tab} onClick={() => setActiveTab(tab)}
-                className={`flex-1 h-9 rounded-xl text-xs font-bold transition-all ${
-                  activeTab === tab ? 'bg-white shadow text-foreground' : 'text-muted-foreground'
-                }`}>
-                {tab === 'about' ? 'About' : 'How to Use'}
+        {/* Categories */}
+        <div className="space-y-3 pb-24">
+          {filteredDirectory.map(cat => (
+            <div key={cat.name} className="card-elevated overflow-hidden">
+              <button
+                onClick={() => toggleCategory(cat.name)}
+                className="w-full flex items-center justify-between p-4 text-left"
+              >
+                <div>
+                  <p className="font-semibold text-foreground text-sm">{cat.name}</p>
+                  <p className="text-xs text-muted-foreground">{cat.products.length} products</p>
+                </div>
+                {expandedCats.includes(cat.name) ? (
+                  <ChevronUp size={18} className="text-muted-foreground" strokeWidth={1.8} />
+                ) : (
+                  <ChevronDown size={18} className="text-muted-foreground" strokeWidth={1.8} />
+                )}
               </button>
-            ))}
-          </div>
 
-          {/* Tab content ────────────────────────────────── */}
-          <AnimatePresence mode="wait">
-            {activeTab === 'about' ? (
-              <motion.div key="about"
-                initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 10 }} transition={{ duration: 0.2 }}
-                className="space-y-4">
-
-                {/* Description */}
-                {product.description && (
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
-                      Description
-                    </p>
-                    <p className="text-sm text-foreground/80 leading-relaxed">{product.description}</p>
-                  </div>
-                )}
-
-                {/* Benefit highlight */}
-                {product.benefits && (
-                  <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3.5">
-                    <CheckCircle2 size={16} className="text-emerald-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-700 mb-0.5">
-                        Key benefit
-                      </p>
-                      <p className="text-xs font-semibold text-emerald-800">{product.benefits}</p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Strength info */}
-                {strengthMeta && (
-                  <div className={`rounded-2xl px-4 py-3.5 ${strengthMeta.bg}`}>
-                    <p className={`text-[10px] font-bold uppercase tracking-widest mb-0.5 ${strengthMeta.color}`}>
-                      Strength: {strengthMeta.label}
-                    </p>
-                    <p className={`text-xs ${strengthMeta.color} opacity-80`}>{strengthMeta.desc}</p>
-                  </div>
-                )}
-              </motion.div>
-            ) : (
-              <motion.div key="usage"
-                initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -10 }} transition={{ duration: 0.2 }}
-                className="space-y-3">
-
-                {product.usagePhase?.length > 0 ? (
-                  product.usagePhase.map(phase => {
-                    const meta = PHASE_META[phase];
-                    const Icon = meta?.icon || Clock;
+              {expandedCats.includes(cat.name) && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="border-t border-border"
+                >
+                  {cat.products.map(product => {
+                    const added = isAdded(product.name);
                     return (
-                      <div key={phase} className={`rounded-2xl px-4 py-4 ${meta?.bg || 'bg-accent'}`}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <Icon size={14} className={meta?.color || 'text-foreground'} />
-                          <p className={`text-xs font-bold ${meta?.color || 'text-foreground'}`}>
-                            {meta?.label || phase.replace('_', ' ')}
-                          </p>
+                      <div key={product.name} className="flex items-start gap-3 p-4 border-b border-border last:border-b-0">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground">{product.name}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{product.desc}</p>
+                          <span className={`inline-block mt-1.5 text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                            product.tag === 'Scalp' ? 'bg-sage-light text-primary' :
+                            product.tag === 'Hair' ? 'bg-secondary text-foreground' :
+                            'bg-accent text-foreground'
+                          }`}>{product.tag}</span>
                         </div>
-                        <p className={`text-xs leading-relaxed ${meta?.color || 'text-foreground'} opacity-80`}>
-                          {USAGE_TIPS[phase] || 'Follow the instructions on the product packaging.'}
-                        </p>
+                        <button
+                          onClick={() => !added && addProduct(product)}
+                          disabled={added}
+                          className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1 transition-colors ${
+                            added ? 'bg-primary/10' : 'bg-accent btn-press'
+                          }`}
+                        >
+                          {added ? (
+                            <Check size={16} className="text-primary" strokeWidth={2} />
+                          ) : (
+                            <Plus size={16} className="text-foreground" strokeWidth={2} />
+                          )}
+                        </button>
                       </div>
                     );
-                  })
-                ) : (
-                  <div className="rounded-2xl bg-accent px-4 py-4">
-                    <p className="text-sm text-foreground/70 leading-relaxed">
-                      Follow the instructions on the product packaging for best results.
-                    </p>
-                  </div>
-                )}
+                  })}
+                </motion.div>
+              )}
+            </div>
+          ))}
 
-                {/* General tip */}
-                <div className="bg-primary/5 border border-primary/10 rounded-2xl px-4 py-3.5">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-primary mb-1">
-                    Pro tip
-                  </p>
-                  <p className="text-xs text-foreground/70 leading-relaxed">
-                    Consistency matters more than frequency. Use as directed for at least 4–6 weeks before assessing results.
-                  </p>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
-
-      {/* ── Sticky buy buttons ─────────────────────────────── */}
-      <div className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-gray-100 px-5 py-4">
-        <div className="max-w-[430px] mx-auto flex gap-3">
-          {product.jumiaUrl && (
-            <a
-              href={product.jumiaUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={handleBuy}
-              className="flex-1 h-13 py-3.5 rounded-2xl bg-primary text-primary-foreground font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-primary/20 active:scale-95 transition-transform"
-            >
-              <ShoppingCart size={16} /> Buy on Jumia
-            </a>
-          )}
-          {product.amazonUrl && (
-            <a
-              href={product.amazonUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={handleBuy}
-              className={`${product.jumiaUrl ? 'w-13 px-3.5' : 'flex-1'} h-13 py-3.5 rounded-2xl border-2 border-gray-200 text-foreground font-bold text-sm flex items-center justify-center gap-2 active:scale-95 transition-transform`}
-            >
-              {product.jumiaUrl
-                ? <ExternalLink size={17} />
-                : <><ExternalLink size={16} /> Amazon</>
-              }
-            </a>
+          {filteredDirectory.length === 0 && (
+            <div className="text-center py-12">
+              <p className="text-muted-foreground text-sm">No products found matching "{search}"</p>
+            </div>
           )}
         </div>
       </div>
@@ -384,4 +235,4 @@ const ProductDetailPage = () => {
   );
 };
 
-export default ProductDetailPage;
+export default ProductDirectory;
