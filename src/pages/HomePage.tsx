@@ -185,7 +185,25 @@ const IconResults = () => (
   </svg>
 );
 
-// IconCart kept for when the cart feature ships,its tile is hidden below.
+// Bookmark, matching the save icon used on the product cards and the
+// Wishlist page header. Deliberately NOT a basket,there is no cart and
+// no checkout, purchases happen on the retailer's site.
+const IconWishlist = () => (
+  <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+    {/* Bookmark body */}
+    <path d="M11 6 L25 6 Q27 6 27 8.5 L27 29.5 L18 23.5 L9 29.5 L9 8.5 Q9 6 11 6 Z" fill="#DCE5D8" stroke="#4E7A63" strokeWidth="1.2" strokeLinejoin="round"/>
+    {/* Top band */}
+    <path d="M11 6 L25 6 Q27 6 27 8.5 L27 11 L9 11 L9 8.5 Q9 6 11 6 Z" fill="#4E7A63"/>
+    {/* Saved heart */}
+    <path d="M18 21 C18 21 14 18.6 14 15.9 C14 14.4 15.2 13.4 16.4 13.4 C17.2 13.4 17.8 13.9 18 14.4 C18.2 13.9 18.8 13.4 19.6 13.4 C20.8 13.4 22 14.4 22 15.9 C22 18.6 18 21 18 21 Z" fill="#4E7A63"/>
+    {/* Sparkle */}
+    <path d="M29 9 L29.8 10.6 L31.5 11.4 L29.8 12.2 L29 13.8 L28.2 12.2 L26.5 11.4 L28.2 10.6 Z" fill="#4E7A63" opacity="0.7"/>
+  </svg>
+);
+
+// IconCart is unused. Kept only in case a real checkout ever ships,which
+// would mean leaving the affiliate model, since commission requires the
+// purchase to complete on the retailer's own site.
 const IconCart = () => (
   <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
     {/* Basket body */}
@@ -456,8 +474,7 @@ const HomePage = () => {
     { icon: <IconScalpHealth />, label: 'Scalp Health', onClick: () => navigate('/history?tab=scalp') },
     { icon: <IconSpotIt />,      label: 'Know It',      onClick: () => navigate('/spot-it') },
     { icon: <IconResults />,     label: 'Results',      onClick: () => navigate('/results') },
-    // Cart hidden for v1,restore when the cart feature ships:
-    // { icon: <IconCart />,        label: 'Cart',         onClick: () => navigate('/shop') },
+    { icon: <IconWishlist />,    label: 'Wishlist',     onClick: () => navigate('/wishlist') },
   ];
 
   // ── Hero content per state ──
@@ -593,7 +610,7 @@ const HomePage = () => {
         @media (min-width: 768px) {
           .fs-home-inner { max-width: 760px; margin: 0 auto; }
           .fs-home-hero  { max-width: 760px; margin: 0 auto; }
-          .fs-icon-grid  { grid-template-columns: repeat(6, 1fr) !important; }
+          .fs-icon-grid  { grid-template-columns: repeat(7, 1fr) !important; }
         }
       `}</style>
       

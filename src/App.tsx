@@ -54,6 +54,7 @@ import ResetPasswordPage from './pages/ResetPassword';
 import AdminPage from './pages/AdminPage';
 import UserGeneratedProducts from './pages/UserGeneratedProducts';
 import ProductDetailPage from './pages/ProductDetailPage';
+import WishlistPage from './pages/WishlistPage';
 
 const queryClient = new QueryClient();
 
@@ -196,17 +197,20 @@ const App = () => {
                   <Route path="/stylist/quick-intake" element={<StylistQuickIntake />} />
                   <Route path="/stylist/clients" element={<StylistClients />} />
                   <Route path="/stylist/profile" element={<StylistProfilePage />} />
-                  <Route path="*" element={<NotFound />} />
                   <Route path="/terms" element={<Terms />} />
                   <Route path="/goodbye" element={<GoodbyePage />} />
                   <Route path="/auth/callback" element={<AuthCallback />} />
                   <Route path="/privacy" element={<PrivacyPolicy />} />
-                 <Route path="/reset-password" element={<ResetPasswordPage />} /> 
-                 <Route path="/admin" element={<AdminPage />} />
-                 <Route path="/products" element={<UserGeneratedProducts />} />
-                 <Route path="/product/:slug" element={<ProductDetailPage />} />
-                 <Route path="/product-guide" element={<ProductDirectory />} />
-                 <Route path="/shop" element={<Navigate to="/products" replace />} />
+                  <Route path="/reset-password" element={<ResetPasswordPage />} />
+                  <Route path="/admin" element={<AdminPage />} />
+                  <Route path="/products" element={<UserGeneratedProducts />} />
+                  <Route path="/product/:slug" element={<ProductDetailPage />} />
+                  <Route path="/product-guide" element={<ProductDirectory />} />
+                  <Route path="/wishlist" element={<WishlistPage />} />
+                  <Route path="/shop" element={<Navigate to="/products" replace />} />
+
+                  {/* Catch-all stays last. */}
+                  <Route path="*" element={<NotFound />} />
                 </Routes>
               </Layout>
             </SessionGuard>
