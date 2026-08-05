@@ -55,6 +55,7 @@ import AdminPage from './pages/AdminPage';
 import UserGeneratedProducts from './pages/UserGeneratedProducts';
 import ProductDetailPage from './pages/ProductDetailPage';
 import WishlistPage from './pages/WishlistPage';
+import { initAnalytics, grantAnalyticsConsent } from './lib/analytics'
 
 const queryClient = new QueryClient();
 
@@ -150,6 +151,13 @@ const App = () => {
         });
     }
   }, []);
+   useEffect(() => {
+    initAnalytics();
+    if (localStorage.getItem('analytics_consent') === 'granted') {
+      grantAnalyticsConsent();
+    }
+  }, []);
+
 
   return (
     <QueryClientProvider client={queryClient}>
