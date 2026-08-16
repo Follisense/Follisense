@@ -55,7 +55,7 @@ import AdminPage from './pages/AdminPage';
 import UserGeneratedProducts from './pages/UserGeneratedProducts';
 import ProductDetailPage from './pages/ProductDetailPage';
 import WishlistPage from './pages/WishlistPage';
-import { initAnalytics, grantAnalyticsConsent } from './lib/analytics'
+import { initAnalytics, grantAnalyticsConsent, trackPageview } from './lib/analytics'
 
 const queryClient = new QueryClient();
 
@@ -136,7 +136,11 @@ const SessionGuard = ({ children }: { children: React.ReactNode }) => {
 
   return <>{children}</>;
 };
-
+const RouteTracker = () => {
+  const location = useLocation();
+  useEffect(() => { trackPageview(); }, [location.pathname]);
+  return null;
+};
 const App = () => {
   // Register Firebase service worker
   useEffect(() => {
@@ -167,6 +171,7 @@ const App = () => {
           <Sonner />
           <BrowserRouter>
             <SessionGuard>
+              <RouteTracker />
               <Layout>
                 <Routes>
                   <Route path="/" element={<SplashScreen />} />

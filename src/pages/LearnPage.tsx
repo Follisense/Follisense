@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Clock, ChevronRight, Sparkles } from 'lucide-react';
@@ -6,35 +6,11 @@ import { articles, categories, getArticleById } from '@/data/learnArticles';
 import { useApp } from '@/contexts/AppContext';
 import ArticleView from '@/components/ArticleView';
 import ConditionGuidePage from '@/pages/ConditionGuidePage';
+import PageShell from '@/components/PageShell';
 
-const mont     = "'Montserrat', sans-serif";
-const playfair = "'Playfair Display', serif";
-
-const C = {
-  bg:         '#FFFFFF',
-  surface:    '#F3F5EF',
-  ink:        '#5F6B60',
-  goldSolid:  '#4E7A63',
-  goldDeep:   '#2E4A39',
-  gold08:     'rgba(46,74,57,0.08)',
-  goldBorder: 'rgba(46,74,57,0.18)',
-  mid:        '#DEE4D9',
-  muted:      '#9BA398',
-  warm:       '#7E877C',
-  white:      '#FFFFFF',
-};
-
-const categoryColor: Record<string, string> = {
-  'Scalp health':           'rgba(46,74,57,0.75)',
-  'Hair health':            'rgba(64,96,74,0.75)',
-  'Nutrition':              'rgba(90,120,70,0.75)',
-  'Conditions':             'rgba(58,88,68,0.75)',
-  'Styling and protection': 'rgba(96,112,100,0.75)',
-  "Men's hair":             'rgba(80,100,84,0.75)',
-  'Myth busting':           'rgba(72,116,88,0.75)',
-  'All':                    'rgba(46,74,57,0.75)',
-  'Know the signs':         'rgba(58,88,68,0.75)',
-};
+// Layout, breakpoints and card styling now live in src/styles/layout.css.
+// This file keeps only what is specific to Learn: category colours, the image
+// map, and the filtering logic.
 
 const categoryColorSolid: Record<string, string> = {
   'Scalp health':           '#2E4A39',
@@ -47,6 +23,8 @@ const categoryColorSolid: Record<string, string> = {
   'All':                    '#2E4A39',
   'Know the signs':         '#3A5844',
 };
+
+const accentFor = (category: string) => categoryColorSolid[category] || '#2E4A39';
 
 // ─── Local article images ─────────────────────────────────────────────────────
 import imgScalpMatters         from '@/assets/Scalp Matters image 1.jpg';
@@ -126,90 +104,91 @@ const articleImageSets: Record<string, string> = {
   'natural-hair-myth':        imgNaturalHairMyth,
 };
 
-const sessionSeed = Math.random();
-const getArticleImage = (id: string): string | null => {
-  return articleImageSets[id] || null;
-};
+const getArticleImage = (id: string): string | null => articleImageSets[id] || null;
 
 const allCategories = ['All', ...categories.filter(c => c !== 'All'), 'Know the signs'];
 
-// ─── Article row ──────────────────────────────────────────────────────────────
-const ArticleRow = ({ article, onClick }: { article: any; onClick: () => void }) => {
-  const [hovered, setHovered] = useState(false);
-  const accentSolid = categoryColorSolid[article.category] || '#2E4A39';
+// ─── Article card ─────────────────────────────────────────────────────────────
+// Renders as a row on a phone and a card in the grid from 700px up. That switch
+// is entirely in layout.css; nothing here knows about screen width.
+const ArticleCard = ({ article, onClick }: { article: any; onClick: () => void }) => {
   const img = getArticleImage(article.id);
 
   return (
     <motion.button
+      type="button"
+      className="fs-article"
       onClick={onClick}
-      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
-      onFocus={() => setHovered(true)} onBlur={() => setHovered(false)}
-      layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-      style={{ width: '100%', textAlign: 'left', background: C.white, borderRadius: 18, marginBottom: 10, border: hovered ? `1.5px solid ${C.goldBorder}` : `1.5px solid ${C.mid}`, cursor: 'pointer', display: 'flex', overflow: 'hidden', boxShadow: hovered ? `0 6px 20px rgba(46,74,57,0.10), 0 2px 8px rgba(0,0,0,0.04)` : '0 2px 8px rgba(0,0,0,0.04)', transition: 'border 0.18s, box-shadow 0.18s' }}
+      layout
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -8 }}
+      style={{ ['--fs-accent' as any]: accentFor(article.category) }}
     >
-      <div style={{ width: hovered ? 4 : 3, flexShrink: 0, background: accentSolid, opacity: hovered ? 0.5 : 0.22, transition: 'width 0.18s, opacity 0.18s' }} />
+      <span className="fs-article-accent" aria-hidden="true" />
       {img && (
-        <div style={{ width: 120, flexShrink: 0, backgroundImage: `url(${img})`, backgroundSize: 'cover', backgroundPosition: 'center', minHeight: '100%' }} />
+        <span className="fs-article-img" style={{ backgroundImage: `url(${img})` }} aria-hidden="true" />
       )}
-      <div style={{ flex: 1, padding: '14px 12px' }}>
-        <span style={{ fontFamily: mont, fontSize: 9, fontWeight: 700, color: categoryColor[article.category] || C.goldDeep, display: 'block', marginBottom: 5, letterSpacing: '0.07em', textTransform: 'uppercase' }}>
-          {article.category}
+      <span className="fs-article-body">
+        <span className="fs-article-cat">{article.category}</span>
+        <span className="fs-article-title">{article.title}</span>
+        <span className="fs-article-preview">{article.preview}</span>
+        <span className="fs-article-meta">
+          <span className="fs-article-time">
+            <Clock size={11} />
+            {article.readTime} min read
+          </span>
+          <ChevronRight size={14} />
         </span>
-        <h3 style={{ fontFamily: mont, fontSize: 13, fontWeight: 600, color: hovered ? C.goldDeep : C.ink, margin: '0 0 5px', lineHeight: 1.35, transition: 'color 0.18s' }}>
-          {article.title}
-        </h3>
-        <p style={{ fontFamily: mont, fontSize: 11, fontWeight: 400, color: C.warm, margin: '0 0 10px', lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-          {article.preview}
-        </p>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: C.muted, fontFamily: mont, fontSize: 10 }}>
-          <Clock size={10} />
-          <span>{article.readTime} min read</span>
-        </div>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', paddingRight: 12 }}>
-        <ChevronRight size={14} color={hovered ? C.goldSolid : C.mid} style={{ transition: 'color 0.18s' }} />
-      </div>
+      </span>
     </motion.button>
   );
 };
 
 // ─── Featured card ────────────────────────────────────────────────────────────
+// Stacked on a phone, image-left from 900px up.
 const FeaturedCard = ({ article, onClick }: { article: any; onClick: () => void }) => {
-  const [hovered, setHovered] = useState(false);
   const img = getArticleImage(article.id);
+  const accent = accentFor(article.category);
 
   return (
     <motion.button
-      layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
+      type="button"
+      className="fs-featured"
       onClick={onClick}
-      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
-      onFocus={() => setHovered(true)} onBlur={() => setHovered(false)}
-      style={{ width: '100%', textAlign: 'left', background: C.white, borderRadius: 22, overflow: 'hidden', marginBottom: 12, border: hovered ? `1.5px solid ${C.goldBorder}` : `1.5px solid ${C.mid}`, cursor: 'pointer', boxShadow: hovered ? `0 8px 24px rgba(46,74,57,0.12), 0 2px 8px rgba(0,0,0,0.04)` : '0 3px 12px rgba(0,0,0,0.05)', transition: 'border 0.18s, box-shadow 0.18s' }}
+      layout
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      style={{ ['--fs-accent' as any]: accent }}
     >
-      <div style={{ height: 160, background: img ? `url(${img}) center/cover no-repeat` : `linear-gradient(135deg, ${C.gold08} 0%, ${C.surface} 100%)`, position: 'relative', display: 'flex', alignItems: 'flex-end', padding: '12px 16px' }}>
-        <span style={{ position: 'relative', zIndex: 1, fontFamily: mont, fontSize: 9, fontWeight: 700, padding: '3px 10px', borderRadius: 100, letterSpacing: '0.06em', background: 'rgba(255,255,255,0.88)', color: categoryColorSolid[article.category] || '#2E4A39', border: `1px solid ${C.goldBorder}`, textTransform: 'uppercase' }}>
-          {article.category}
-        </span>
-      </div>
-      <div style={{ padding: '14px 18px 18px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 7 }}>
+      <span
+        className="fs-featured-img"
+        style={{
+          backgroundImage: img
+            ? `url(${img})`
+            : `linear-gradient(135deg, rgba(46,74,57,0.08) 0%, #F3F5EF 100%)`,
+        }}
+      >
+        <span className="fs-featured-tag">{article.category}</span>
+      </span>
+
+      <span className="fs-featured-body">
+        <span className="fs-featured-flag">
           <Sparkles size={11} color="rgba(46,74,57,0.65)" />
-          <span style={{ fontFamily: mont, fontSize: 9, fontWeight: 700, color: 'rgba(46,74,57,0.70)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Featured</span>
-        </div>
-        <h3 style={{ fontFamily: mont, fontSize: 16, fontWeight: 600, color: hovered ? C.goldDeep : C.ink, margin: '0 0 7px', lineHeight: 1.3, transition: 'color 0.18s' }}>
-          {article.title}
-        </h3>
-        <p style={{ fontFamily: mont, fontSize: 12, fontWeight: 400, color: C.warm, margin: '0 0 12px', lineHeight: 1.6, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-          {article.preview}
-        </p>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: C.muted, fontFamily: mont, fontSize: 10 }}>
+          Featured
+        </span>
+        <span className="fs-featured-title">{article.title}</span>
+        <span className="fs-featured-preview">{article.preview}</span>
+        <span className="fs-featured-meta">
+          <span className="fs-article-time">
             <Clock size={11} />
-            <span>{article.readTime} min read</span>
-          </div>
-          <ChevronRight size={14} color={hovered ? C.goldSolid : C.mid} style={{ transition: 'color 0.18s' }} />
-        </div>
-      </div>
+            {article.readTime} min read
+          </span>
+          <ChevronRight size={14} />
+        </span>
+      </span>
     </motion.button>
   );
 };
@@ -219,10 +198,9 @@ const LearnPage = () => {
   const { onboardingData } = useApp();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeCategory, setActiveCategory] = useState('All');
-  const [searchQuery, setSearchQuery]       = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedArticleId, setSelectedArticleId] = useState<string | null>(searchParams.get('article'));
   const [showConditionGuide, setShowConditionGuide] = useState(!!searchParams.get('condition'));
-  const pillsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (searchParams.get('condition')) setShowConditionGuide(true);
@@ -261,93 +239,88 @@ const LearnPage = () => {
 
   if (selectedArticle) {
     return (
-      <div style={{ minHeight: '100vh', background: C.bg, overflowY: 'auto' }}>
-        <ArticleView article={selectedArticle} coverImage={getArticleImage(selectedArticle.id)} onBack={() => { setSelectedArticleId(null); setSearchParams({}); }} onNavigate={(id) => { setSelectedArticleId(id); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
+      <div style={{ minHeight: '100vh', background: '#FFFFFF', overflowY: 'auto' }}>
+        <ArticleView
+          article={selectedArticle}
+          coverImage={getArticleImage(selectedArticle.id)}
+          onBack={() => { setSelectedArticleId(null); setSearchParams({}); }}
+          onNavigate={(id) => { setSelectedArticleId(id); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+        />
       </div>
     );
   }
 
   if (showConditionGuide || activeCategory === 'Know the signs') {
     return (
-      <div style={{ minHeight: '100vh', background: C.bg, overflowY: 'auto' }}>
-        <ConditionGuidePage onBack={() => { setShowConditionGuide(false); setActiveCategory('All'); setSearchParams({}); }} />
+      <div style={{ minHeight: '100vh', background: '#FFFFFF', overflowY: 'auto' }}>
+        <ConditionGuidePage
+          onBack={() => { setShowConditionGuide(false); setActiveCategory('All'); setSearchParams({}); }}
+        />
       </div>
     );
   }
 
   const featuredArticle = sortedArticles[0];
-  const restArticles    = sortedArticles.slice(1);
+  const restArticles = sortedArticles.slice(1);
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, paddingBottom: 100, fontFamily: mont }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Playfair+Display:wght@500;600&display=swap');
-        input::placeholder { color: #AEB6A9; font-family: 'Montserrat', sans-serif; }
-      `}</style>
-
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
-
-        {/* Hero,green and dark aesthetic */}
-        <div style={{ position: 'relative', background: 'linear-gradient(145deg, #1A2820 0%, #23392C 40%, #1E2E24 70%, #101A14 100%)', padding: '52px 20px 32px', overflow: 'hidden' }}>
-          <div style={{ position: 'absolute', top: -40, right: -40, width: 180, height: 180, borderRadius: '50%', background: 'radial-gradient(circle, rgba(110,158,130,0.18) 0%, transparent 70%)', pointerEvents: 'none' }} />
-          <div style={{ position: 'absolute', bottom: -20, left: -20, width: 140, height: 140, borderRadius: '50%', background: 'radial-gradient(circle, rgba(110,158,130,0.10) 0%, transparent 70%)', pointerEvents: 'none' }} />
-          <div style={{ position: 'relative', zIndex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 12 }}>
-              <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#6E9E82' }} />
-              <span style={{ fontFamily: mont, fontSize: 10, fontWeight: 700, color: 'rgba(110,158,130,0.9)', letterSpacing: '0.14em', textTransform: 'uppercase' }}>FolliSense</span>
-            </div>
-            <h1 style={{ fontFamily: playfair, fontSize: 26, fontWeight: 500, color: '#F5F7F2', margin: 0, lineHeight: 1.2 }}>Learn</h1>
-            <p style={{ fontFamily: mont, fontSize: 12, color: 'rgba(245,247,242,0.5)', fontWeight: 300, margin: '6px 0 0' }}>Scalp and hair health explained</p>
-          </div>
+    <PageShell title="Learn" subtitle="Scalp and hair health explained">
+      {/* Search and category pills. Stacked with a scrolling pill strip on a
+          phone, side by side with wrapping pills from 900px. */}
+      <div className="fs-toolbar">
+        <div className="fs-search">
+          <Search size={15} className="fs-search-icon" />
+          <input
+            type="text"
+            placeholder="Search topics…"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
         </div>
 
-        <div style={{ padding: '16px 20px 0' }}>
+        <div className="fs-pills">
+          {allCategories.map(cat => (
+            <button
+              key={cat}
+              type="button"
+              onClick={() => setActiveCategory(cat)}
+              className={`fs-pill${activeCategory === cat ? ' is-active' : ''}`}
+              style={{ ['--fs-accent' as any]: accentFor(cat) }}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+      </div>
 
-          {/* Search */}
-          <div style={{ position: 'relative', marginBottom: 14 }}>
-            <Search size={15} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: C.muted }} />
-            <input type="text" placeholder="Search topics…" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-              style={{ width: '100%', paddingLeft: 40, paddingRight: 16, paddingTop: 12, paddingBottom: 12, borderRadius: 14, background: C.surface, border: `1.5px solid ${C.mid}`, color: C.ink, fontFamily: mont, fontSize: 13, outline: 'none', boxSizing: 'border-box', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }} />
-          </div>
-
-          {/* Category pills */}
-          <div ref={pillsRef} style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 16, scrollbarWidth: 'none' }}>
-            {allCategories.map(cat => {
-              const active = activeCategory === cat;
-              const solid = categoryColorSolid[cat] || '#2E4A39';
-              const r = parseInt(solid.slice(1,3), 16);
-              const g = parseInt(solid.slice(3,5), 16);
-              const b = parseInt(solid.slice(5,7), 16);
-              return (
-                <button key={cat} onClick={() => setActiveCategory(cat)} style={{ flexShrink: 0, padding: '7px 16px', borderRadius: 100, fontFamily: mont, fontSize: 11, fontWeight: 700, border: active ? `1px solid rgba(${r},${g},${b},0.28)` : `1.5px solid ${C.mid}`, cursor: 'pointer', transition: 'all 0.18s', background: active ? `rgba(${r},${g},${b},0.12)` : C.white, color: active ? solid : C.warm, boxShadow: active ? `0 2px 8px rgba(${r},${g},${b},0.12)` : '0 1px 4px rgba(0,0,0,0.04)', letterSpacing: '0.02em' }}>
-                  {cat}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Articles */}
-          <AnimatePresence mode="popLayout">
-            {sortedArticles.length === 0 ? (
-              <motion.p key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ textAlign: 'center', color: C.muted, padding: '48px 0', fontFamily: mont, fontSize: 13 }}>
-                No articles found. Try a different search or category.
-              </motion.p>
-            ) : (
-              <>
-                {featuredArticle && (
-                  <FeaturedCard key={featuredArticle.id + '-featured'} article={featuredArticle} onClick={() => setSelectedArticleId(featuredArticle.id)} />
-                )}
-                {restArticles.map((article, i) => (
-                  <motion.div key={article.id} transition={{ duration: 0.18, delay: i * 0.04 }}>
-                    <ArticleRow article={article} onClick={() => setSelectedArticleId(article.id)} />
-                  </motion.div>
-                ))}
-              </>
+      <AnimatePresence mode="popLayout">
+        {sortedArticles.length === 0 ? (
+          <motion.p key="empty" className="fs-empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            No articles found. Try a different search or category.
+          </motion.p>
+        ) : (
+          <div key="results">
+            {featuredArticle && (
+              <FeaturedCard
+                key={featuredArticle.id + '-featured'}
+                article={featuredArticle}
+                onClick={() => setSelectedArticleId(featuredArticle.id)}
+              />
             )}
-          </AnimatePresence>
-        </div>
-      </motion.div>
-    </div>
+
+            <div className="fs-grid">
+              {restArticles.map(article => (
+                <ArticleCard
+                  key={article.id}
+                  article={article}
+                  onClick={() => setSelectedArticleId(article.id)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+    </PageShell>
   );
 };
 

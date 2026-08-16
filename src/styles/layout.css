@@ -1,0 +1,438 @@
+/* src/styles/layout.css
+ *
+ * One place for breakpoints, container width and the shared card/grid rules.
+ * Inline styles cannot carry media queries, which is why every page was
+ * inventing its own responsive CSS string and drifting from the others.
+ *
+ * Import once in main.tsx:  import '@/styles/layout.css';
+ *
+ * Breakpoints, used everywhere. Do not invent new ones per page:
+ *   700px   phone row layouts become 2-column cards
+ *   900px   toolbars go horizontal, featured cards go side-by-side
+ *   1040px  3-column grids
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Playfair+Display:wght@500;600&display=swap');
+
+:root {
+  --fs-max: 1080px;
+  --fs-gut: clamp(16px, 4vw, 28px);
+
+  --fs-white: #FFFFFF;
+  --fs-surface: #F3F5EF;
+  --fs-ink: #5F6B60;
+  --fs-warm: #7E877C;
+  --fs-muted: #9BA398;
+  --fs-mid: #DEE4D9;
+  --fs-green: #2E4A39;
+  --fs-green-soft: #4E7A63;
+  --fs-green-border: rgba(46, 74, 57, 0.18);
+
+  --fs-mont: 'Montserrat', system-ui, sans-serif;
+  --fs-playfair: 'Playfair Display', Georgia, serif;
+}
+
+/* ── Shell ────────────────────────────────────────────────────────────────
+   Everything sits in this container. Full width on a phone, capped and
+   centred on a laptop, so text never runs to 200 characters a line. */
+.fs-shell {
+  max-width: var(--fs-max);
+  margin: 0 auto;
+  width: 100%;
+  padding-left: var(--fs-gut);
+  padding-right: var(--fs-gut);
+}
+
+.fs-page {
+  min-height: 100vh;
+  background: var(--fs-white);
+  padding-bottom: 100px;
+  font-family: var(--fs-mont);
+}
+
+/* ── Hero ─────────────────────────────────────────────────────────────────
+   The standard dark green page header. Its inner content uses .fs-shell so
+   the headline lines up with the body below it. */
+.fs-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 52px 0 32px;
+  background: linear-gradient(145deg, #1A2820 0%, #23392C 40%, #1E2E24 70%, #101A14 100%);
+}
+.fs-hero-glow-a,
+.fs-hero-glow-b {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.fs-hero-glow-a {
+  top: -40px; right: -40px; width: 180px; height: 180px;
+  background: radial-gradient(circle, rgba(110, 158, 130, 0.18) 0%, transparent 70%);
+}
+.fs-hero-glow-b {
+  bottom: -20px; left: -20px; width: 140px; height: 140px;
+  background: radial-gradient(circle, rgba(110, 158, 130, 0.10) 0%, transparent 70%);
+}
+.fs-hero-inner { position: relative; z-index: 1; }
+.fs-hero-eyebrow {
+  display: flex; align-items: center; gap: 7px; margin-bottom: 12px;
+}
+.fs-hero-dot { width: 7px; height: 7px; border-radius: 50%; background: #6E9E82; }
+.fs-hero-brand {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: rgba(110, 158, 130, 0.9);
+}
+.fs-hero-title {
+  font-family: var(--fs-playfair);
+  font-size: 26px; font-weight: 500; color: #F5F7F2;
+  margin: 0; line-height: 1.2;
+}
+.fs-hero-sub {
+  font-size: 12px; font-weight: 300; margin: 6px 0 0;
+  color: rgba(245, 247, 242, 0.5);
+}
+
+@media (min-width: 900px) {
+  .fs-hero { padding: 44px 0 34px; }
+  .fs-hero-glow-a { right: 60px; width: 260px; height: 260px; top: -60px; }
+  .fs-hero-title { font-size: 34px; }
+  .fs-hero-sub { font-size: 13px; margin-top: 7px; }
+}
+
+/* ── Step flow sheet ──────────────────────────────────────────────────────
+   Step flows (mid-cycle check-in, wash day, onboarding) keep their own top
+   bar: back arrow, progress dots, close. They do NOT use PageShell's hero,
+   which is for browse pages; a big green title band above a progress bar
+   competes with the flow's own chrome.
+
+   On a phone this is the full-height sheet with a rounded top edge, exactly
+   as now. From 700px it becomes a centred card with room around it, so the
+   narrow column reads as deliberate. */
+.fs-flow {
+  min-height: 100vh;
+  background: #EDEFE7;
+  padding-top: 16px;
+}
+.fs-flow-sheet {
+  background: #FBFCF8;
+  border-radius: 28px 28px 0 0;
+  box-shadow: 0 -6px 28px rgba(20, 28, 22, 0.08);
+  width: 100%;
+  min-height: calc(100vh - 16px);
+  padding: 28px 24px 60px;
+  box-sizing: border-box;
+}
+@media (min-width: 700px) {
+  .fs-flow { padding-top: 44px; padding-bottom: 64px; }
+  .fs-flow-sheet {
+    border-radius: 24px;
+    min-height: 0;
+    padding: 32px 34px 40px;
+    border: 1.5px solid var(--fs-mid);
+    box-shadow: 0 6px 30px rgba(20, 28, 22, 0.10);
+  }
+}
+
+.fs-body { padding-top: 20px; }
+
+/* ── Form flow ────────────────────────────────────────────────────────────
+   Linear flows (scalp check-in, onboarding, baseline capture, routine setup,
+   profile edit) stay narrow at every screen size. Widening a single-column
+   form only stretches each input into a long bar while the eye travels the
+   same distance down the page, and labels drift away from their fields.
+
+   On a phone this is edge to edge exactly as now. From 700px the content
+   sits on a card against the soft surface, so the narrow column reads as a
+   deliberate choice rather than an unfinished page. Same idea as the auth
+   pages' split layout, applied to flows that have no brand panel. */
+.fs-page-form { background: var(--fs-surface); }
+
+.fs-form-shell {
+  max-width: 560px;
+  margin: 0 auto;
+  width: 100%;
+  padding-left: var(--fs-gut);
+  padding-right: var(--fs-gut);
+}
+
+.fs-form-card { background: transparent; }
+
+@media (min-width: 700px) {
+  .fs-form-card {
+    background: var(--fs-white);
+    border: 1.5px solid var(--fs-mid);
+    border-radius: 22px;
+    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.05);
+    padding: 28px 30px 32px;
+    margin-top: 4px;
+  }
+}
+
+/* Sticky footer for a flow's primary action, so Continue stays reachable
+   without scrolling on a short laptop window. */
+.fs-form-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 10px;
+  padding: 14px 0 18px;
+  background: linear-gradient(to top, var(--fs-surface) 70%, transparent);
+}
+@media (min-width: 700px) {
+  .fs-form-actions {
+    position: static;
+    background: none;
+    padding: 22px 0 0;
+  }
+}
+
+/* ── Toolbar: search plus filter pills ────────────────────────────────────
+   Stacked with a sideways-scrolling pill strip on a phone. On a laptop the
+   pills wrap instead, because hidden horizontal scroll is a touch gesture
+   and desktop users never find the categories off-screen. */
+.fs-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.fs-search { position: relative; }
+.fs-search input {
+  width: 100%;
+  padding: 12px 16px 12px 40px;
+  border-radius: 14px;
+  background: var(--fs-surface);
+  border: 1.5px solid var(--fs-mid);
+  color: var(--fs-ink);
+  font-family: var(--fs-mont);
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+.fs-search input::placeholder { color: #AEB6A9; font-family: var(--fs-mont); }
+.fs-search-icon {
+  position: absolute; left: 14px; top: 50%;
+  transform: translateY(-50%); color: var(--fs-muted);
+}
+
+.fs-pills {
+  display: flex; gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 4px;
+}
+.fs-pills::-webkit-scrollbar { display: none; }
+.fs-pill {
+  flex-shrink: 0;
+  padding: 7px 16px;
+  border-radius: 100px;
+  font-family: var(--fs-mont);
+  font-size: 11px; font-weight: 700; letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s, border-color 0.18s;
+  background: var(--fs-white);
+  color: var(--fs-warm);
+  border: 1.5px solid var(--fs-mid);
+}
+.fs-pill.is-active {
+  background: color-mix(in srgb, var(--fs-accent) 12%, transparent);
+  color: var(--fs-accent);
+  border: 1px solid color-mix(in srgb, var(--fs-accent) 28%, transparent);
+}
+
+@media (min-width: 900px) {
+  .fs-toolbar { flex-direction: row; align-items: flex-start; gap: 16px; margin-bottom: 22px; }
+  .fs-search { width: 300px; flex-shrink: 0; }
+  .fs-pills { flex-wrap: wrap; overflow: visible; padding-top: 2px; padding-bottom: 0; }
+}
+
+/* ── Card grid ────────────────────────────────────────────────────────────
+   One column on a phone, two from 700, three from 1040. Any page listing
+   cards uses this rather than its own grid. */
+.fs-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+@media (min-width: 700px) {
+  .fs-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+}
+@media (min-width: 1040px) {
+  .fs-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* ── Article card ─────────────────────────────────────────────────────────
+   A horizontal row on a phone (thumbnail left, text right) and a stacked
+   card from 700 up. The row shape is right on a narrow screen and wrong on
+   a wide one, where a 120px thumbnail next to a 1000px text block reads as
+   a layout bug. */
+.fs-article {
+  width: 100%;
+  text-align: left;
+  padding: 0;
+  font-family: var(--fs-mont);
+  background: var(--fs-white);
+  border: 1.5px solid var(--fs-mid);
+  border-radius: 18px;
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+.fs-article:hover,
+.fs-article:focus-visible {
+  border-color: var(--fs-green-border);
+  box-shadow: 0 6px 20px rgba(46, 74, 57, 0.10), 0 2px 8px rgba(0, 0, 0, 0.04);
+  outline: none;
+}
+.fs-article-accent {
+  width: 3px; flex-shrink: 0;
+  background: var(--fs-accent);
+  opacity: 0.22;
+  transition: opacity 0.18s;
+}
+.fs-article:hover .fs-article-accent { opacity: 0.5; }
+.fs-article-img {
+  width: 120px; flex-shrink: 0;
+  background-size: cover; background-position: center;
+}
+.fs-article-body {
+  flex: 1; min-width: 0;
+  display: block;
+  padding: 14px 12px;
+}
+.fs-article-cat {
+  display: block;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fs-accent);
+  margin-bottom: 5px;
+}
+.fs-article-title {
+  display: block;
+  font-size: 13px; font-weight: 600; line-height: 1.35;
+  color: var(--fs-ink);
+  margin-bottom: 5px;
+  transition: color 0.18s;
+}
+.fs-article:hover .fs-article-title { color: var(--fs-green); }
+.fs-article-preview {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp:2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 11px; line-height: 1.55;
+  color: var(--fs-warm);
+  margin-bottom: 10px;
+}
+.fs-article-meta {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 10px; color: var(--fs-muted);
+}
+.fs-article-time { display: flex; align-items: center; gap: 5px; }
+
+@media (min-width: 700px) {
+  .fs-article { display: block; }
+  .fs-article-accent { display: none; }
+  .fs-article-img { width: 100%; height: 140px; display: block; }
+  .fs-article-body { padding: 16px 17px 18px; }
+  .fs-article-title { font-size: 15px; margin-bottom: 8px; }
+  .fs-article-preview { font-size: 12.5px; line-height: 1.6; margin-bottom: 14px; }
+  .fs-article-cat { margin-bottom: 7px; }
+  .fs-article-meta { font-size: 10.5px; }
+}
+
+/* ── Featured card ────────────────────────────────────────────────────────
+   Stacked on a phone, image-left from 900. Full width at 160px tall on a
+   laptop reads as a banner ad rather than an article. */
+.fs-featured {
+  width: 100%;
+  text-align: left;
+  padding: 0;
+  font-family: var(--fs-mont);
+  background: var(--fs-white);
+  border: 1.5px solid var(--fs-mid);
+  border-radius: 22px;
+  overflow: hidden;
+  cursor: pointer;
+  display: block;
+  margin-bottom: 12px;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.05);
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+.fs-featured:hover,
+.fs-featured:focus-visible {
+  border-color: var(--fs-green-border);
+  box-shadow: 0 8px 24px rgba(46, 74, 57, 0.12), 0 2px 8px rgba(0, 0, 0, 0.04);
+  outline: none;
+}
+.fs-featured-img {
+  height: 160px;
+  background-size: cover; background-position: center;
+  position: relative;
+  display: flex; align-items: flex-end;
+  padding: 12px 16px;
+}
+.fs-featured-tag {
+  position: relative; z-index: 1;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 10px; border-radius: 100px;
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--fs-accent);
+  border: 1px solid var(--fs-green-border);
+}
+.fs-featured-body { display: block; padding: 14px 18px 18px; }
+.fs-featured-flag {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 7px;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(46, 74, 57, 0.70);
+}
+.fs-featured-title {
+  display: block;
+  font-size: 16px; font-weight: 600; line-height: 1.3;
+  color: var(--fs-ink);
+  margin-bottom: 7px;
+  transition: color 0.18s;
+}
+.fs-featured:hover .fs-featured-title { color: var(--fs-green); }
+.fs-featured-preview {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp:2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 12px; line-height: 1.6;
+  color: var(--fs-warm);
+  margin-bottom: 12px;
+}
+.fs-featured-meta {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 10px; color: var(--fs-muted);
+}
+
+@media (min-width: 900px) {
+  .fs-featured { display: flex; margin-bottom: 26px; }
+  .fs-featured-img { width: 44%; height: auto; min-height: 250px; flex-shrink: 0; }
+  .fs-featured-body {
+    flex: 1;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 30px 34px;
+  }
+  .fs-featured-title { font-size: 24px; line-height: 1.28; margin-bottom: 12px; }
+  .fs-featured-preview { font-size: 14px; line-height: 1.65; max-width: 52ch; margin-bottom: 18px; }
+  .fs-featured-meta { font-size: 11px; }
+}
+
+/* ── Empty state ──────────────────────────────────────────────────────── */
+.fs-empty {
+  text-align: center;
+  padding: 48px 0;
+  font-family: var(--fs-mont);
+  font-size: 13px;
+  color: var(--fs-muted);
+}

@@ -3,10 +3,30 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, X, Camera } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
-import { scoreSymptoms, scoreToRisk, buildNumericPayload, buildCCCAPayload } from '@/utils/symptomScoring';
+import { scoreSymptoms, buildNumericPayload, buildCCCAPayload } from '@/utils/symptomScoring';
 import { supabase } from '@/lib/supabaseClient';
-import { updateCheckinSession } from '@/services/checkinService';
 import ProductSearch from '@/components/ProductSearch';
+
+// Ported from Tailwind/shadcn tokens to the same inline-style system as
+// MidCycleCheckIn, so both halves of the check-in look like one app. Layout
+// comes from layout.css (.fs-flow / .fs-form-shell / .fs-flow-sheet), which
+// replaces the hardcoded max-w-[430px] phone frame this file used to carry.
+// No logic changed.
+
+const dm       = "'DM Sans', sans-serif";
+const playfair = "'Playfair Display', serif";
+
+const C = {
+  bg:         '#EDEFE7',
+  ink:        '#23201A',
+  gold:       '#4E7A63',
+  goldDeep:   '#2E4A39',
+  gold10:     'rgba(46,74,57,0.10)',
+  goldBorder: 'rgba(46,74,57,0.22)',
+  mid:        '#E3E7DE',
+  muted:      '#8A8F86',
+  white:      '#FBFCF8',
+};
 
 const washDayUsedAcks = new Set<string>();
 
@@ -242,6 +262,78 @@ const photoAreasMale = [
   { id: 'areas-of-concern', label: 'Any areas of concern', baselineLabel: 'Areas of concern' },
 ];
 
+// ─── Shared bits ──────────────────────────────────────────────────────────────
+
+const TopBar = ({ totalSteps, currentStep, onBack, onClose }: {
+  totalSteps: number; currentStep: number; onBack: () => void; onClose: () => void;
+}) => (
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
+    <button onClick={onBack} aria-label="Back"
+      style={{ width: 36, height: 36, borderRadius: '50%', background: C.bg, border: `1.5px solid ${C.mid}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+      <ArrowLeft size={16} color={C.ink} strokeWidth={1.8} />
+    </button>
+    <div style={{ display: 'flex', gap: 4 }}>
+      {Array.from({ length: totalSteps }).map((_, i) => (
+        <div key={i} style={{ width: 18, height: 4, borderRadius: 4, background: i <= currentStep ? C.gold : C.mid, transition: 'background 0.25s' }} />
+      ))}
+    </div>
+    <button onClick={onClose} aria-label="Close check-in"
+      style={{ width: 36, height: 36, borderRadius: '50%', background: C.bg, border: `1.5px solid ${C.mid}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+      <X size={16} color={C.muted} strokeWidth={1.8} />
+    </button>
+  </div>
+);
+
+const BrandRow = () => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 24 }}>
+    <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.gold }} />
+    <span style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: '0.12em', textTransform: 'uppercase' }}>FolliSense</span>
+  </div>
+);
+
+const OptionButton = ({ label, desc, selected, onClick }: {
+  label: string; desc?: string; selected: boolean; onClick: () => void;
+}) => (
+  <button onClick={onClick}
+    style={{ width: '100%', textAlign: 'left', padding: '15px 18px', borderRadius: 16, border: selected ? `2px solid ${C.gold}` : `1.5px solid ${C.mid}`, background: selected ? C.gold10 : C.white, cursor: 'pointer', boxShadow: selected ? `0 4px 16px rgba(46,74,57,0.14)` : '0 1px 4px rgba(0,0,0,0.04)', transition: 'all 0.15s' }}>
+    <div style={{ display: 'flex', alignItems: desc ? 'flex-start' : 'center', gap: 12 }}>
+      <div style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, marginTop: desc ? 2 : 0, border: `2px solid ${selected ? C.gold : C.mid}`, background: selected ? C.gold : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}>
+        {selected && <div style={{ width: 7, height: 7, borderRadius: '50%', background: C.white }} />}
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <p style={{ fontFamily: dm, fontSize: 14, fontWeight: selected ? 600 : 400, color: selected ? C.goldDeep : C.ink, margin: 0 }}>{label}</p>
+        {desc && <p style={{ fontFamily: dm, fontSize: 12, color: C.muted, margin: '3px 0 0', lineHeight: 1.45 }}>{desc}</p>}
+      </div>
+    </div>
+  </button>
+);
+
+const PrimaryButton = ({ children, onClick, disabled, height = 52 }: {
+  children: React.ReactNode; onClick: () => void; disabled?: boolean; height?: number;
+}) => (
+  <button onClick={onClick} disabled={disabled}
+    style={{ width: '100%', height, borderRadius: 16, border: 'none', background: disabled ? C.mid : C.goldDeep, color: disabled ? C.muted : '#f5f5f5', fontFamily: dm, fontSize: 14, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', boxShadow: disabled ? 'none' : '0 4px 16px rgba(46,74,57,0.22)', transition: 'all 0.2s' }}>
+    {children}
+  </button>
+);
+
+const ConfirmSheet = ({ onStay, onLeave }: { onStay: () => void; onLeave: () => void }) => (
+  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+    style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 24px' }}>
+    <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+      style={{ background: C.white, borderRadius: 28, padding: 28, maxWidth: 360, width: '100%', boxShadow: '0 8px 40px rgba(0,0,0,0.14)' }}>
+      <h3 style={{ fontFamily: playfair, fontSize: 20, fontWeight: 500, color: C.ink, margin: '0 0 8px' }}>Are you sure?</h3>
+      <p style={{ fontFamily: dm, fontSize: 13, color: C.muted, margin: '0 0 24px', lineHeight: 1.5 }}>Your progress won't be saved.</p>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button onClick={onStay} style={{ flex: 1, height: 46, borderRadius: 14, border: `1.5px solid ${C.mid}`, background: 'transparent', fontFamily: dm, fontSize: 13, fontWeight: 500, color: C.ink, cursor: 'pointer' }}>Continue</button>
+        <button onClick={onLeave} style={{ flex: 1, height: 46, borderRadius: 14, border: 'none', background: C.goldDeep, fontFamily: dm, fontSize: 13, fontWeight: 600, color: '#f5f5f5', cursor: 'pointer' }}>Leave</button>
+      </div>
+    </motion.div>
+  </motion.div>
+);
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+
 const WashDayAssessment = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -254,7 +346,7 @@ const WashDayAssessment = () => {
   } = useApp();
   const [currentStep, setCurrentStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [newProductText, setNewProductText] = useState('');
+  const [newProductText] = useState('');
   const [newProductsList, setNewProductsList] = useState<string[]>([]);
   const [photoSaved, setPhotoSaved] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -471,182 +563,196 @@ const WashDayAssessment = () => {
 
   const getBaselineForArea = (baselineLabel: string) => baselinePhotos.find(p => p.area === baselineLabel);
 
+  // ── Interstitial between the scalp section and the hair section ──
   if (currentStep === scalpSection.length && !showHairIntro && !isPhotoStep) {
     return (
-      <div className="min-h-screen bg-background">
-        <div className="max-w-[430px] mx-auto px-6">
-          <div className="flex items-center justify-between py-4">
-            <button onClick={() => setCurrentStep(currentStep - 1)} className="p-2 -ml-2">
-              <ArrowLeft size={22} className="text-foreground" strokeWidth={1.8} />
-            </button>
-            <div className="flex gap-1">
-              {Array.from({ length: totalSteps }).map((_, i) => (
-                <div key={i} className={`h-1 w-5 rounded-full transition-colors duration-300 ${i <= currentStep ? 'bg-primary' : 'bg-border'}`} />
-              ))}
-            </div>
-            <button onClick={() => setShowConfirm(true)} className="p-2 -mr-2">
-              <X size={22} className="text-foreground" strokeWidth={1.8} />
-            </button>
-          </div>
-          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="pt-4">
-            <h2 className="text-xl font-semibold mb-2">And your hair?</h2>
-            <p className="text-muted-foreground text-sm mb-8">Your hair can tell us a lot about what's happening at the scalp</p>
-            <button onClick={() => setShowHairIntro(true)} className="w-full h-14 bg-primary text-primary-foreground rounded-xl font-semibold text-base btn-press">Continue</button>
-          </motion.div>
-          <AnimatePresence>
-            {showConfirm && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-foreground/30 z-50 flex items-center justify-center px-6">
-                <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="bg-card rounded-3xl p-6 max-w-sm w-full shadow-card">
-                  <h3 className="font-semibold text-lg mb-2">Are you sure?</h3>
-                  <p className="text-sm text-muted-foreground mb-6">Your progress won't be saved.</p>
-                  <div className="flex gap-3">
-                    <button onClick={() => setShowConfirm(false)} className="flex-1 h-12 rounded-xl border border-border font-medium text-sm btn-press">Continue</button>
-                    <button onClick={() => navigate('/home')} className="flex-1 h-12 rounded-xl bg-primary text-primary-foreground font-medium text-sm btn-press">Leave</button>
-                  </div>
-                </motion.div>
+      <>
+        <style>{`html, body, #root { background: ${C.bg} !important; margin: 0; padding: 0; }`}</style>
+        <div className="fs-flow">
+          <div className="fs-form-shell">
+            <div className="fs-flow-sheet">
+              <TopBar
+                totalSteps={totalSteps}
+                currentStep={currentStep}
+                onBack={() => setCurrentStep(currentStep - 1)}
+                onClose={() => setShowConfirm(true)}
+              />
+              <BrandRow />
+              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+                <h2 style={{ fontFamily: playfair, fontSize: 22, fontWeight: 500, color: C.ink, margin: '0 0 12px', lineHeight: 1.25 }}>
+                  And your hair?
+                </h2>
+                <p style={{ fontFamily: dm, fontSize: 13, color: C.muted, margin: '0 0 28px', lineHeight: 1.5 }}>
+                  Your hair can tell us a lot about what's happening at the scalp
+                </p>
+                <PrimaryButton onClick={() => setShowHairIntro(true)}>Continue</PrimaryButton>
               </motion.div>
-            )}
-          </AnimatePresence>
+            </div>
+          </div>
         </div>
-      </div>
+
+        <AnimatePresence>
+          {showConfirm && (
+            <ConfirmSheet onStay={() => setShowConfirm(false)} onLeave={() => navigate('/home')} />
+          )}
+        </AnimatePresence>
+      </>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-[430px] mx-auto px-6">
-        <div className="flex items-center justify-between py-4">
-          <button onClick={() => {
-            if (currentStep > 0) {
-              if (currentStep === scalpSection.length && showHairIntro) setShowHairIntro(false);
-              else setCurrentStep(currentStep - 1);
-            } else setShowConfirm(true);
-          }} className="p-2 -ml-2">
-            <ArrowLeft size={22} className="text-foreground" strokeWidth={1.8} />
-          </button>
-          <div className="flex gap-1">
-            {Array.from({ length: totalSteps }).map((_, i) => (
-              <div key={i} className={`h-1 w-5 rounded-full transition-colors duration-300 ${i <= currentStep ? 'bg-primary' : 'bg-border'}`} />
-            ))}
-          </div>
-          <button onClick={() => setShowConfirm(true)} className="p-2 -mr-2">
-            <X size={22} className="text-foreground" strokeWidth={1.8} />
-          </button>
-        </div>
+    <>
+      <style>{`html, body, #root { background: ${C.bg} !important; margin: 0; padding: 0; }`}</style>
 
-        <AnimatePresence mode="wait">
-          {acknowledgment ? (
-            <motion.div key="ack" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="pt-16 text-center">
-              <p className="text-lg font-medium text-foreground">{acknowledgment}</p>
-            </motion.div>
-          ) : !isPhotoStep && currentQ ? (
-            <motion.div key={currentStep} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }} className="pt-4">
-              <p className="text-label mb-2">{getContextLabel()}</p>
-              <p className="text-sm text-muted-foreground mb-1">{getContextSubtext()}</p>
-              <h2 className="text-xl font-semibold mb-6">{getQuestion(currentQ)}</h2>
-              <div className="space-y-3">
-                {getOptions(currentQ).map((opt, optIdx) => (
-                  <button key={opt.label} onClick={() => selectAnswer(opt.label, optIdx)} className={`selection-card w-full text-left ${answers[currentQ.key] === opt.label ? 'selected' : ''}`}>
-                    <p className="font-medium text-foreground">{opt.label}</p>
-                    {opt.desc && <p className="text-sm text-muted-foreground mt-0.5">{opt.desc}</p>}
+      <div className="fs-flow">
+        <div className="fs-form-shell">
+          <div className="fs-flow-sheet">
+            <TopBar
+              totalSteps={totalSteps}
+              currentStep={currentStep}
+              onBack={() => {
+                if (currentStep > 0) {
+                  if (currentStep === scalpSection.length && showHairIntro) setShowHairIntro(false);
+                  else setCurrentStep(currentStep - 1);
+                } else setShowConfirm(true);
+              }}
+              onClose={() => setShowConfirm(true)}
+            />
+            <BrandRow />
+
+            <AnimatePresence mode="wait">
+              {acknowledgment ? (
+                <motion.div key="ack" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+                  style={{ paddingTop: 48, paddingBottom: 48, textAlign: 'center' }}>
+                  <p style={{ fontFamily: playfair, fontSize: 22, fontWeight: 500, color: C.ink, lineHeight: 1.3 }}>{acknowledgment}</p>
+                </motion.div>
+              ) : !isPhotoStep && currentQ ? (
+                <motion.div key={currentStep} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }}>
+                  <p style={{ fontFamily: dm, fontSize: 11, fontWeight: 700, color: C.goldDeep, letterSpacing: '0.08em', textTransform: 'uppercase', margin: '0 0 6px' }}>
+                    {getContextLabel()}
+                  </p>
+                  <p style={{ fontFamily: dm, fontSize: 13, color: C.muted, margin: '0 0 12px', lineHeight: 1.5 }}>
+                    {getContextSubtext()}
+                  </p>
+                  <h2 style={{ fontFamily: playfair, fontSize: 22, fontWeight: 500, color: C.ink, margin: '0 0 24px', lineHeight: 1.25 }}>
+                    {getQuestion(currentQ)}
+                  </h2>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {getOptions(currentQ).map((opt, optIdx) => (
+                      <OptionButton
+                        key={opt.label}
+                        label={opt.label}
+                        desc={opt.desc}
+                        selected={answers[currentQ.key] === opt.label}
+                        onClick={() => selectAnswer(opt.label, optIdx)}
+                      />
+                    ))}
+                  </div>
+
+                  {isProductFollowUp && (
+                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ marginTop: 24 }}>
+                      <p style={{ fontFamily: dm, fontSize: 13, fontWeight: 600, color: C.ink, margin: '0 0 12px' }}>
+                        What new products did you use?
+                      </p>
+                      <ProductSearch category="hair" selectedProducts={newProductsList} onProductsChange={setNewProductsList} />
+                      <div style={{ marginTop: 16 }}>
+                        <PrimaryButton onClick={handleProductContinue} height={48}>Continue</PrimaryButton>
+                      </div>
+                    </motion.div>
+                  )}
+                </motion.div>
+              ) : (
+                <motion.div key="photo" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }}>
+                  <h2 style={{ fontFamily: playfair, fontSize: 22, fontWeight: 500, color: C.ink, margin: '0 0 10px', lineHeight: 1.25 }}>
+                    Want to add photos?
+                  </h2>
+                  <p style={{ fontFamily: dm, fontSize: 13, color: C.muted, margin: '0 0 4px', lineHeight: 1.5 }}>
+                    Tracking visually helps you spot gradual changes.
+                  </p>
+                  <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: '0 0 24px' }}>
+                    Photos stay on your device only.
+                  </p>
+
+                  {!photoSaved ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
+                      {photoAreas.map(area => {
+                        const baseline = getBaselineForArea(area.baselineLabel);
+                        return (
+                          <div key={area.id}>
+                            <button onClick={() => setPhotoSaved(true)}
+                              style={{ width: '100%', textAlign: 'left', padding: '14px 16px', borderRadius: 16, border: `1.5px solid ${C.mid}`, background: C.white, cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', gap: 14 }}>
+                              <div style={{ width: 46, height: 46, borderRadius: 14, background: C.gold10, border: `1px solid ${C.goldBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                <Camera size={20} color={C.gold} strokeWidth={1.6} />
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <p style={{ fontFamily: dm, fontSize: 14, fontWeight: 500, color: C.ink, margin: 0 }}>{area.label}</p>
+                                {baseline && (
+                                  <p style={{ fontFamily: dm, fontSize: 11, color: C.gold, margin: '3px 0 0' }}>
+                                    Compare with your baseline from {baseline.date}
+                                  </p>
+                                )}
+                              </div>
+                            </button>
+                            {baseline && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, padding: '9px 12px', borderRadius: 14, background: C.gold10 }}>
+                                <div style={{ width: 36, height: 36, borderRadius: 10, background: C.mid, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                  <Camera size={14} color={C.muted} strokeWidth={1.6} />
+                                </div>
+                                <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: 0 }}>Baseline, {baseline.date}</p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ background: C.white, border: `1.5px solid ${C.mid}`, borderRadius: 20, padding: 24, marginBottom: 20, textAlign: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+                      <div style={{ width: 48, height: 48, borderRadius: '50%', background: C.gold10, border: `1px solid ${C.goldBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                        <Camera size={20} color={C.gold} strokeWidth={1.6} />
+                      </div>
+                      <p style={{ fontFamily: dm, fontSize: 14, fontWeight: 600, color: C.ink, margin: 0 }}>Photo saved</p>
+                      <p style={{ fontFamily: dm, fontSize: 12, color: C.muted, margin: '4px 0 0' }}>Stored on your device only</p>
+                    </div>
+                  )}
+
+                  {research.consented && photoSaved && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderRadius: 16, background: C.gold10, border: `1px solid ${C.goldBorder}`, padding: 16, marginBottom: 24 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontFamily: dm, fontSize: 13, fontWeight: 600, color: C.ink, margin: 0 }}>Include in research programme</p>
+                        <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: '3px 0 0', lineHeight: 1.5 }}>
+                          Anonymised only. You can change this anytime in settings.
+                        </p>
+                      </div>
+                      <button onClick={() => setIncludeInResearch(!includeInResearch)}
+                        aria-label="Include photos in research programme"
+                        aria-pressed={includeInResearch}
+                        style={{ width: 44, height: 24, borderRadius: 100, border: 'none', background: includeInResearch ? C.gold : C.mid, position: 'relative', flexShrink: 0, cursor: 'pointer', transition: 'background 0.18s' }}>
+                        <span style={{ position: 'absolute', top: 2, left: includeInResearch ? 22 : 2, width: 20, height: 20, borderRadius: '50%', background: C.white, boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left 0.18s' }} />
+                      </button>
+                    </div>
+                  )}
+
+                  <PrimaryButton onClick={handleSubmit} disabled={isSaving}>
+                    {isSaving ? 'Saving…' : 'See my results'}
+                  </PrimaryButton>
+                  <button onClick={handleSubmit} disabled={isSaving}
+                    style={{ width: '100%', marginTop: 12, padding: '10px 0', background: 'none', border: 'none', cursor: isSaving ? 'not-allowed' : 'pointer', fontFamily: dm, fontSize: 13, color: C.muted }}>
+                    Skip
                   </button>
-                ))}
-              </div>
-
-              {isProductFollowUp && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-6">
-                  <label className="text-sm font-medium text-foreground mb-3 block">What new products did you use?</label>
-                  <ProductSearch category="hair" selectedProducts={newProductsList} onProductsChange={setNewProductsList} />
-                  <button onClick={handleProductContinue} className="w-full h-12 mt-4 bg-primary text-primary-foreground rounded-xl font-semibold text-sm btn-press">Continue</button>
                 </motion.div>
               )}
-            </motion.div>
-          ) : (
-            <motion.div key="photo" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }} className="pt-4">
-              <h2 className="text-xl font-semibold mb-2">Want to add photos?</h2>
-              <p className="text-muted-foreground text-sm mb-1">Tracking visually helps you spot gradual changes.</p>
-              <p className="text-xs text-muted-foreground mb-6">Photos stay on your device only.</p>
-
-              {!photoSaved ? (
-                <div className="space-y-3 mb-8">
-                  {photoAreas.map(area => {
-                    const baseline = getBaselineForArea(area.baselineLabel);
-                    return (
-                      <div key={area.id}>
-                        <button onClick={() => setPhotoSaved(true)} className="selection-card w-full flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-xl bg-accent flex items-center justify-center">
-                            <Camera size={22} className="text-muted-foreground" strokeWidth={1.5} />
-                          </div>
-                          <div className="flex-1 text-left">
-                            <p className="font-medium text-foreground">{area.label}</p>
-                            {baseline && <p className="text-xs text-primary mt-0.5">Compare with your baseline from {baseline.date}</p>}
-                          </div>
-                        </button>
-                        {baseline && (
-                          <div className="flex items-center gap-3 mt-2 ml-1 px-3 py-2 rounded-xl bg-accent">
-                            <div className="w-10 h-10 rounded-lg bg-border flex items-center justify-center flex-shrink-0">
-                              <Camera size={14} className="text-muted-foreground" strokeWidth={1.5} />
-                            </div>
-                            <p className="text-xs text-muted-foreground">Baseline, {baseline.date}</p>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="card-elevated p-5 mb-4 text-center">
-                  <div className="w-12 h-12 rounded-full bg-sage-light flex items-center justify-center mx-auto mb-3">
-                    <Camera size={22} className="text-primary" />
-                  </div>
-                  <p className="font-medium text-foreground">Photo saved</p>
-                  <p className="text-sm text-muted-foreground">Stored on your device only</p>
-                </div>
-              )}
-
-              {research.consented && photoSaved && (
-                <div className="flex items-center justify-between rounded-2xl bg-accent p-4 mb-6">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground">Include in research programme</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Anonymised only. You can change this anytime in settings.</p>
-                  </div>
-                  <button onClick={() => setIncludeInResearch(!includeInResearch)} className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ml-3 ${includeInResearch ? 'bg-primary' : 'bg-border'}`}>
-                    <div className={`w-5 h-5 rounded-full bg-card shadow-sm absolute top-0.5 transition-transform ${includeInResearch ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
-                  </button>
-                </div>
-              )}
-
-              <button
-                onClick={handleSubmit}
-                disabled={isSaving}
-                className="w-full h-14 bg-primary text-primary-foreground rounded-xl font-semibold text-base btn-press mb-3"
-                style={{ opacity: isSaving ? 0.7 : 1 }}
-              >
-                {isSaving ? 'Saving…' : 'See my results'}
-              </button>
-              <button onClick={handleSubmit} disabled={isSaving} className="w-full text-center text-sm text-muted-foreground py-2">
-                Skip
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            </AnimatePresence>
+          </div>
+        </div>
       </div>
 
       <AnimatePresence>
         {showConfirm && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-foreground/30 z-50 flex items-center justify-center px-6">
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="bg-card rounded-3xl p-6 max-w-sm w-full shadow-card">
-              <h3 className="font-semibold text-lg mb-2">Are you sure?</h3>
-              <p className="text-sm text-muted-foreground mb-6">Your progress won't be saved.</p>
-              <div className="flex gap-3">
-                <button onClick={() => setShowConfirm(false)} className="flex-1 h-12 rounded-xl border border-border font-medium text-sm btn-press">Continue</button>
-                <button onClick={() => navigate('/home')} className="flex-1 h-12 rounded-xl bg-primary text-primary-foreground font-medium text-sm btn-press">Leave</button>
-              </div>
-            </motion.div>
-          </motion.div>
+          <ConfirmSheet onStay={() => setShowConfirm(false)} onLeave={() => navigate('/home')} />
         )}
       </AnimatePresence>
-    </div>
+    </>
   );
 };
 

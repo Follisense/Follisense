@@ -18,6 +18,10 @@ export function initAnalytics() {
     persistence: 'localStorage+cookie',
   })
   started = true
+
+  if (import.meta.env.DEV) {
+    (window as any).posthog = posthog
+  }
 }
 
 export function grantAnalyticsConsent() {
@@ -44,4 +48,8 @@ export function resetUser() {
 export function track(event: string, props?: Record<string, string | number | boolean>) {
   if (!started) return
   posthog.capture(event, props)
+}
+export function trackPageview() {
+  if (!started) return
+  posthog.capture('$pageview')
 }
