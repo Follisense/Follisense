@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Camera, ImageIcon, AlertCircle, Check, Sparkles } from 'lucide-react';
 import { saveBaselinePhotos } from '@/services/photoUploadService';
+import { analyseImage } from '@/lib/visionClient';
 
 import scalpFrontFemale from '@/assets/scalp-front-female.jpeg';
 import scalpSideFemale  from '@/assets/scalp-side-female.jpeg';
@@ -12,7 +13,7 @@ import scalpSideMaleB   from '@/assets/scalp-side-male-b.jpeg';
 import scalpBackMale    from '@/assets/scalp-back-male.png';
 import scalpTopMale     from '@/assets/scalp-top-male.png';
 
-const GOOGLE_VISION_KEY = import.meta.env.VITE_GOOGLE_VISION_KEY as string;
+
 
 // Vision only needs enough pixels to label the image. Sending a full-res phone
 // photo (3-8MB, larger again once base64'd) was the whole reason validation felt
@@ -209,39 +210,21 @@ interface ValidationResult {
 }
 
 const validateScalpPhoto = async (base64: string, stepTitle: string, gender: string = 'woman'): Promise<ValidationResult> => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), VISION_TIMEOUT);
   try {
-    const res = await fetch(
-      `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_KEY}`,
-      {
-        method: 'POST',
-        signal: controller.signal,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requests: [{
-            image: { content: base64 },
-            features: [
-              { type: 'LABEL_DETECTION',    maxResults: 20 },
-              { type: 'TEXT_DETECTION',     maxResults: 1  },
-              { type: 'SAFE_SEARCH_DETECTION'              },
-            ],
-          }],
-        }),
-      }
-    );
-    if (!res.ok) throw new Error(`Vision API error: ${res.status}`);
-    const data   = await res.json();
-    const result = data.responses?.[0];
-    const labels: string[] = (result?.labelAnnotations || []).map((l: any) => l.description.toLowerCase());
+    // The edge function call has no abort signal, so the timeout is a race.
+    const { labels, safeSearch: safe } = await Promise.race([
+      analyseImage(base64),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('vision timeout')), VISION_TIMEOUT)
+      ),
+    ]);
     console.log('[Vision] Labels:', labels);
 
     const hasHairSignal   = anyLabel(labels, HAIR_SIGNALS);
     const hasPersonSignal = anyLabel(labels, PERSON_SIGNALS);
 
     // ── 1. Safety ─────────────────────────────────────────────────────────
-    const safe = result?.safeSearchAnnotation || {};
-    if (safe.adult === 'VERY_LIKELY' || safe.violence === 'VERY_LIKELY') {
+   if (safe.adult === 'VERY_LIKELY' || safe.violence === 'VERY_LIKELY') {
       return { valid: false, reason: 'This image was flagged. Please use a different photo.' };
     }
 
@@ -299,8 +282,6 @@ const validateScalpPhoto = async (base64: string, stepTitle: string, gender: str
   } catch (err) {
     console.warn('[Vision] Validation skipped:', err);
     return { valid: true }; // always fail open if the API is down or times out
-  } finally {
-    clearTimeout(timer);
   }
 };
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Camera, TrendingUp, ImageIcon, ChevronRight, Layers,
@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { useApp } from '@/contexts/AppContext';
+import { analyseImage } from '@/lib/visionClient';
 
 const dm       = "'DM Sans', sans-serif";
 const playfair = "'Playfair Display', serif";
@@ -22,8 +23,6 @@ const C = {
   muted:      'rgba(234,240,233,0.38)',
   warm:       'rgba(234,240,233,0.60)',
   white:      '#101A14',
-  green:      '#5A9A50',
-  green10:    'rgba(90,154,80,0.12)',
   red:        '#E07060',
   red10:      'rgba(220,112,96,0.12)',
 };
@@ -62,35 +61,13 @@ interface PhotoValidation {
   validationReason: string;
 }
 
-const GOOGLE_VISION_KEY = import.meta.env.VITE_GOOGLE_VISION_KEY as string;
-const VISION_URL = `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_KEY}`;
 
 const validateScalpImage = async (base64: string): Promise<PhotoValidation> => {
   try {
-    const response = await fetch(VISION_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        requests: [{
-          image: { content: base64 },
-          features: [
-            { type: 'LABEL_DETECTION',    maxResults: 20 },
-            { type: 'TEXT_DETECTION',     maxResults: 1  },
-            { type: 'SAFE_SEARCH_DETECTION'              },
-          ],
-        }],
-      }),
-    });
-    if (!response.ok) throw new Error(`Vision API error: ${response.status}`);
-    const data   = await response.json();
-    const result = data.responses?.[0];
-    if (!result) throw new Error('No response');
-
-    const labels: string[] = (result.labelAnnotations || []).map((l: any) => l.description.toLowerCase());
+    const { labels, text: detectedText, safeSearch: safe } = await analyseImage(base64);
     console.log('[Vision] Labels:', labels);
-
     // ── Safe search,same threshold as ScalpBaselineCapture ──────────────
-    const safe = result.safeSearchAnnotation || {};
+    
     if (safe.adult === 'VERY_LIKELY' || safe.violence === 'VERY_LIKELY') {
       return { isScalp: false, validationReason: 'Image flagged. Please use a different photo.' };
     }
@@ -101,7 +78,7 @@ const validateScalpImage = async (base64: string): Promise<PhotoValidation> => {
       'beauty', 'close-up', 'macro', 'portrait', 'nape'].some(k => labels.some(l => l.includes(k)));
 
     // ── Reject text/document images ───────────────────────────────────────
-    const detectedText = result.textAnnotations?.[0]?.description || '';
+    
     const wordCount    = detectedText.trim().split(' ').filter((w: string) => w.length > 0).length;
     if (wordCount > 8 && !hasPersonSignal) {
       return { isScalp: false, validationReason: 'This looks like a text or document image. Please upload a real photo of your scalp or hairline.' };
@@ -324,126 +301,138 @@ const PhotoUploadSheet = ({ onClose, onPhotoSaved, attachLabel }: {
   );
 };
 
-// ─── SCORE & TRIAGE HELPERS ───────────────────────────────────────────────────
-// AIRTIGHT SCORING RULES:
-// 1. If a check-in has a stored numeric total_score (written by symptomScoring.ts
-//    at save time), that is the ONLY source of truth,no re-deriving from labels.
-// 2. Label-based SCORE_MAP is a fallback for legacy rows saved before the
-//    numeric scoring fix. New rows never touch it.
-// 3. Check-ins with no scoreable symptoms (e.g. progress_photo entries with
-//    symptoms: {}) return null and are EXCLUDED from score, average, trend,
-//    and the sparkline,they used to inject a fake 80 and pollute everything.
-// 4. Meta keys (itch_score, total_score, risk_level…) are never treated as
-//    symptoms anywhere on this page.
+// ─── WHAT THE USER LOGGED ─────────────────────────────────────────────────────
+// This page no longer renders a derived score, a severity band, or a trend
+// verdict. It shows the user her own entries, counted.
+//
+// The scoring pipeline (symptomScoring.ts) is untouched and still writes
+// total_score at save time. That data is intact for the clinician summary;
+// it simply does not surface in the patient view any more.
+//
+// Rules:
+// 1. Meta keys (itch_score, total_score, risk_level…) are never symptoms.
+// 2. A symptom "counts as reported" when its stored value is a string that is
+//    not one of the explicit no-symptom answers below.
+// 3. A check-in with symptom fields but every answer at no-symptom still
+//    counts in the denominator,that is what makes "4 of 6" honest.
+// 4. Photo-only entries (symptoms: {}) carry no symptom data and are excluded
+//    from the denominator entirely.
 
 const isMetaKey = (k: string) => k.endsWith('_score') || k === 'total_score' || k === 'risk_level';
 
-// Numeric 0–3 label fallback matching symptomScoring.ts (legacy rows only)
-const SCORE_MAP: Record<string, Record<string, number>> = {
-  itch:           { 'None': 0, 'Mild': 1, 'Moderate': 2, 'Severe': 3 },
-  tenderness:     { 'None': 0, 'No': 0, 'A little': 1, 'Yes, noticeably': 2, 'Yes, painful': 3, 'Mild': 1, 'Moderate': 2, 'Severe': 3 },
-  hairline:       { 'No change': 0, 'None': 0, 'Looks a bit thinner': 1, 'Looks a bit different': 1, 'Slight recession': 1, 'Noticeable change': 2, 'Noticeable thinning': 2, "I am concerned": 3, 'Mild': 1, 'Moderate': 2, 'Severe': 3 },
-  flaking:        { 'None': 0, 'Some flaking': 1, 'Heavy flaking': 2, 'Mild': 1, 'Moderate': 2, 'Severe': 3 },
-  shedding:       { 'Normal': 0, 'None': 0, 'More than usual': 1, 'Significantly more': 2, 'Alarming amount': 3, 'Mild': 1, 'Moderate': 2, 'Severe': 3 },
-  irritation:     { 'None': 0, 'A few bumps': 1, 'Minor razor bumps': 1, 'Moderate': 2, 'Ingrown hairs': 2, 'Significant': 3, 'Folliculitis,clusters of bumps': 3 },
-  hairFeel:       { 'Soft and moisturised as usual': 0, 'Feels normal': 0, 'A bit dry': 1, 'A bit dry or tight': 1, 'Very dry or brittle': 2, 'Different texture than usual': 3 },
-  hairBreakage:   { 'No breakage': 0, 'A little, mostly at the ends': 1, 'Moderate, breaking along the length': 2, 'Significant, breaking at the root or in patches': 3 },
-  hairAppearance: { 'Looks healthy, no changes': 0, 'A bit dull or lacklustre': 1, 'Noticeably thinner or less volume': 2, 'Significant change in appearance or density': 3 },
-  hairConcern:    { 'No, hair feels normal': 0, 'A little more than usual': 1, 'Yes, noticeably more': 2, "Yes, I am concerned": 3 },
-  bumps:          { 'None': 0, 'Mild': 1, 'Moderate': 2, 'Severe': 3 },
-  dryness:        { 'None': 0, 'Mild': 1, 'Moderate': 2, 'Severe': 3 },
+// Every answer that means "nothing to report", taken from the 0-value entries
+// in symptomScoring.ts. The old getTopSymptoms only knew about three of these,
+// so answers like 'No breakage' were being counted as reported symptoms.
+const NOT_REPORTED = new Set([
+  'None', 'No', 'No change', 'Normal',
+  'Feels normal', 'Soft and moisturised as usual',
+  'No breakage', 'Looks healthy, no changes', 'No, hair feels normal',
+]);
+
+const SYMPTOM_LABELS: Record<string, string> = {
+  itch:           'Itch',
+  tenderness:     'Tenderness',
+  hairline:       'Hairline change',
+  flaking:        'Flaking',
+  shedding:       'Shedding',
+  irritation:     'Irritation',
+  hairFeel:       'Hair feel',
+  hairBreakage:   'Breakage',
+  hairAppearance: 'Appearance',
+  hairConcern:    'Hair concern',
+  bumps:          'Bumps',
+  dryness:        'Dryness',
 };
 
-// The numeric pipeline scores 7 symptoms at 0–3 → raw max 21
-const NUMERIC_MAX = 21;
+const labelFor = (key: string) =>
+  SYMPTOM_LABELS[key] ||
+  key.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase()).trim();
 
-// Returns a 10–100 display score, or null if this check-in has no symptom data
-const calculateScore = (symptoms: Record<string, any> | null | undefined): number | null => {
-  if (!symptoms) return null;
-
-  // Source of truth: stored numeric total from symptomScoring.ts
-  if (typeof symptoms.total_score === 'number') {
-    const raw = Math.max(0, Math.min(symptoms.total_score, NUMERIC_MAX));
-    return Math.round(100 - (raw / NUMERIC_MAX) * 90);
-  }
-
-  // Legacy fallback: derive from string labels
-  const keys = Object.keys(symptoms).filter(k =>
-    !isMetaKey(k) && SCORE_MAP[k] && typeof symptoms[k] === 'string'
-  );
-  if (keys.length === 0) return null;
-  const raw = keys.reduce((sum, k) => sum + (SCORE_MAP[k]?.[symptoms[k]] ?? 0), 0);
-  const maxPossible = keys.length * 3;
-  return Math.round(100 - (raw / Math.max(maxPossible, 1)) * 90);
+// Does this check-in contain answered symptom fields at all?
+const hasSymptomData = (symptoms: Record<string, any> | null | undefined): boolean => {
+  if (!symptoms) return false;
+  return Object.entries(symptoms).some(([k, v]) => !isMetaKey(k) && typeof v === 'string' && v.length > 0);
 };
 
-// Triage: prefer the stored column, then the stored risk_level inside symptoms
-const getTriage = (c: CheckIn): 'green' | 'amber' | 'red' =>
-  c.triage_result || (c.symptoms?.risk_level as any) || 'green';
+// Which symptoms did the user actually report in this check-in?
+const reportedSymptoms = (symptoms: Record<string, any> | null | undefined): string[] => {
+  if (!symptoms) return [];
+  return Object.entries(symptoms)
+    .filter(([k, v]) => !isMetaKey(k) && typeof v === 'string' && v.length > 0 && !NOT_REPORTED.has(v))
+    .map(([k]) => k);
+};
 
 // A photo-only entry carries no health data. Deleting its last photo deletes
 // the whole row,there is nothing left worth keeping.
 const isPhotoOnly = (c: CheckIn) =>
   (c.type === 'visual' || c.type === 'progress_photo') && !c.is_baseline;
 
-const triageColor = { green: '#5A9A50', amber: '#D4A866', red: '#B05040' };
-const triageBg    = { green: 'rgba(90,154,80,0.10)', amber: 'rgba(110,158,130,0.12)', red: 'rgba(176,80,64,0.10)' };
-const triageLabel = { green: 'Looking good', amber: 'Watch closely', red: 'Needs attention' };
 const formatDate      = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 const formatShortDate = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 
-// ─── SPARKLINE ────────────────────────────────────────────────────────────────
-// Renders from 1 point (single dot + date); line + shaded area appear from the
-// 2nd point onward. The baseline point draws as a hollow ring so the starting
-// position is obvious once there are several check-ins.
-const SparkLine = ({ data }: { data: { score: number; triage: string; date: string; label: string; isBaseline: boolean }[] }) => {
-  const [hov, setHov] = useState<number | null>(null);
-  const W = 320, H = 100, PL = 6, PR = 6, PT = 12, PB = 26;
-  const iW = W - PL - PR, iH = H - PT - PB;
-  if (data.length === 0) return null;
-  const pts = data.map((d, i) => ({
-    x: data.length === 1 ? PL + iW / 2 : PL + (i / (data.length - 1)) * iW,
-    y: PT + (1 - d.score / 100) * iH,
-    ...d,
-  }));
-  const line = data.length > 1 ? pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ') : '';
-  const area = data.length > 1 ? `${line} L${pts[pts.length-1].x},${PT+iH} L${pts[0].x},${PT+iH}Z` : '';
-  return (
-    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
-      <defs>
-        <linearGradient id="areaGradGold" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={C.gold} stopOpacity="0.25" />
-          <stop offset="100%" stopColor={C.gold} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      {[25, 50, 75].map(v => <line key={v} x1={PL} x2={W-PR} y1={PT+(1-v/100)*iH} y2={PT+(1-v/100)*iH} stroke="rgba(255,255,255,0.06)" strokeWidth={1} />)}
-      {area && <path d={area} fill="url(#areaGradGold)" />}
-      {line && <path d={line} fill="none" stroke={C.gold} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />}
-      {pts.map((p, i) => (
-        <g key={i} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)} style={{ cursor: 'default' }}>
-          <circle
-            cx={p.x} cy={p.y}
-            r={hov === i ? 5.5 : p.isBaseline ? 4.5 : 3.5}
-            fill={p.isBaseline ? C.white : (triageColor[p.triage as keyof typeof triageColor] || C.gold)}
-            stroke={p.isBaseline ? (triageColor[p.triage as keyof typeof triageColor] || C.gold) : C.white}
-            strokeWidth={p.isBaseline ? 2 : 1.5}
-          />
-          {hov === i && (<>
-            <rect x={p.x - 42} y={p.y - 30} width={84} height={20} rx={6} fill={C.ink} />
-            <text x={p.x} y={p.y - 16} fontSize={9} fill="#101A14" textAnchor="middle" fontFamily={dm}>
-              {p.isBaseline ? `${p.score} · baseline` : `${p.score} · ${p.label}`}
-            </text>
-          </>)}
-          <text x={p.x} y={H - 4} fontSize={8} fill={C.muted} textAnchor="middle" fontFamily={dm}>{p.date}</text>
-        </g>
-      ))}
-    </svg>
-  );
-};
+// How many recent check-ins the frequency card and the grid look at.
+const WINDOW = 6;
+// Below this many symptom check-ins the charts stay hidden and the user is
+// asked to keep logging. One or two entries cannot show a pattern, and
+// "itch 1 of 1" reads as broken.
+const MIN_CHECKINS_FOR_CHART = 3;
+
+// ─── FREQUENCY BARS ───────────────────────────────────────────────────────────
+// "Itch · 4 of 6". A count of the user's own answers, with the denominator
+// always visible. No weighting, no derived value.
+const FrequencyBars = ({ rows, total }: {
+  rows: { key: string; count: number }[];
+  total: number;
+}) => (
+  <div>
+    {rows.map((r, i) => (
+      <div key={r.key} style={{ marginBottom: i < rows.length - 1 ? 13 : 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
+          <span style={{ fontFamily: dm, fontSize: 13, color: C.ink }}>{labelFor(r.key)}</span>
+          <span style={{ fontFamily: dm, fontSize: 11, color: C.warm }}>{r.count} of {total}</span>
+        </div>
+        <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
+          <div style={{ width: `${Math.round((r.count / Math.max(total, 1)) * 100)}%`, height: '100%', background: C.gold, borderRadius: 3 }} />
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
+// ─── CHECK-IN GRID ────────────────────────────────────────────────────────────
+// Rows are symptoms, columns are check-ins oldest to newest. A filled dot means
+// the user reported it that day. This is the piece that carries change over
+// time now that the score line is gone.
+const CheckInGrid = ({ keys, columns }: {
+  keys: string[];
+  columns: { date: string; reported: Set<string> }[];
+}) => (
+  <div style={{ display: 'grid', gridTemplateColumns: `84px repeat(${columns.length}, minmax(0,1fr))`, gap: '0 4px', alignItems: 'center' }}>
+    <div />
+    {columns.map((col, i) => (
+      <div key={`h-${i}`} style={{ fontFamily: dm, fontSize: 10, color: C.muted, textAlign: 'center' }}>{col.date}</div>
+    ))}
+    {keys.map(key => (
+      <Fragment key={key}>
+        <div style={{ fontFamily: dm, fontSize: 12, color: C.ink, padding: '9px 0' }}>{labelFor(key)}</div>
+        {columns.map((col, i) => (
+          <div key={`${key}-${i}`} style={{ display: 'flex', justifyContent: 'center' }}>
+            <div
+              title={`${labelFor(key)} · ${col.date} · ${col.reported.has(key) ? 'reported' : 'not reported'}`}
+              style={{ width: 11, height: 11, borderRadius: '50%', background: col.reported.has(key) ? C.gold : 'rgba(255,255,255,0.09)' }}
+            />
+          </div>
+        ))}
+      </Fragment>
+    ))}
+  </div>
+);
 
 // ─── PHOTO CARD ───────────────────────────────────────────────────────────────
 // Only ever rendered for entries that HAVE photos. Removing the last photo of a
 // photo-only entry removes this card entirely (see handleDeletePhoto).
+// No severity badge and no triage_reasoning text,a photo card shows the photo
+// and when it was taken.
 const PhotoCard = ({ checkin, onDeletePhoto }: {
   checkin: CheckIn;
   onDeletePhoto: (photo: CheckInPhoto) => void;
@@ -452,7 +441,6 @@ const PhotoCard = ({ checkin, onDeletePhoto }: {
   const [idx, setIdx] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const current = photos[Math.min(idx, Math.max(photos.length - 1, 0))];
-  const triage  = getTriage(checkin);
   const photoOnly = isPhotoOnly(checkin);
 
   const handleDeleteTap = () => {
@@ -466,12 +454,6 @@ const PhotoCard = ({ checkin, onDeletePhoto }: {
       style={{ ...cardStyle, overflow: 'hidden', borderRadius: 20, display: 'flex', flexDirection: 'column' }}>
       <div style={{ height: 190, position: 'relative', background: `url(${current?.photo_url}) center/cover` }}>
         {checkin.is_baseline && <div style={{ position: 'absolute', top: 12, left: 12, background: C.gold, borderRadius: 20, padding: '3px 10px', fontFamily: dm, fontSize: 10, fontWeight: 700, color: '#101A14' }}>Baseline</div>}
-        {/* Triage badge only for symptom check-ins,a photo-only entry has no triage */}
-        {!photoOnly && (
-          <div style={{ position: 'absolute', top: 12, right: 12, background: triageBg[triage], border: `1px solid ${triageColor[triage]}40`, borderRadius: 20, padding: '3px 10px', fontFamily: dm, fontSize: 10, fontWeight: 700, color: triageColor[triage] }}>
-            {triageLabel[triage]}
-          </div>
-        )}
 
         {/* Two-tap confirm. For a photo-only entry this removes the whole card. */}
         {current?.photo_url && (
@@ -497,9 +479,6 @@ const PhotoCard = ({ checkin, onDeletePhoto }: {
         <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: '2px 0 0' }}>
           {photoOnly ? 'progress photo' : checkin.type} · {photos.length} photo{photos.length !== 1 ? 's' : ''}
         </p>
-        {checkin.triage_reasoning && !photoOnly && (
-          <p style={{ fontFamily: dm, fontSize: 11, color: C.warm, marginTop: 8, lineHeight: 1.55, borderTop: `1px solid ${C.mid}`, paddingTop: 8 }}>{checkin.triage_reasoning}</p>
-        )}
       </div>
     </motion.div>
   );
@@ -541,7 +520,7 @@ const EmptyState = ({ icon, title, desc }: { icon: React.ReactNode; title: strin
 type Tab = 'photos' | 'health';
 
 const HistoryPage = () => {
-  const { baselinePhotos, baselineRisk, baselineDate } = useApp();
+  const { baselinePhotos, baselineDate } = useApp();
   const [tab, setTab]               = useState<Tab>('photos');
   const [checkins, setCheckins]     = useState<CheckIn[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -603,7 +582,7 @@ const HistoryPage = () => {
 
       // No target → create a standalone progress_photo entry.
       // NOTE: symptoms stays {} and triage_result stays null on purpose —
-      // photo entries carry no health data and are excluded from all scoring.
+      // photo entries carry no symptom data and are excluded from the counts.
       if (!checkinId) {
         const { data: ci, error: ciErr } = await supabase.from('checkins').insert({
           user_id:       uid,
@@ -635,7 +614,7 @@ const HistoryPage = () => {
   // ── Delete a photo ──
   // Photo row + storage file always go. If the parent was a photo-only entry and
   // this was its last photo, the check-in row goes too,otherwise you are left
-  // with an empty ghost card. Symptom check-ins keep their row and their score;
+  // with an empty ghost card. Symptom check-ins keep their row and their data;
   // they simply stop appearing in the photos tab.
   const handleDeletePhoto = async (photo: CheckInPhoto) => {
     const parent    = checkins.find(c => c.id === photo.checkin_id);
@@ -674,52 +653,50 @@ const HistoryPage = () => {
     setShowUploader(true);
   };
 
-  // ── Health tab data: SYMPTOM check-ins only ──
-  // Anything without scoreable symptom data (progress photos, malformed rows)
-  // is excluded from score, average, trend, sparkline, and the log.
-  const scoredCheckins = checkins
-    .map(c => ({ ...c, score: calculateScore(c.symptoms), triage: getTriage(c) }))
-    .filter((c): c is CheckIn & { score: number; triage: 'green' | 'amber' | 'red' } => c.score !== null);
+  // ── Health tab data: SYMPTOM check-ins only, newest first ──
+  // Photo-only entries and malformed rows are excluded from every count.
+  const symptomCheckins = checkins
+    .filter(c => hasSymptomData(c.symptoms))
+    .map(c => ({ ...c, reported: reportedSymptoms(c.symptoms) }));
 
-  const avgScore           = scoredCheckins.length > 0 ? Math.round(scoredCheckins.reduce((a, c) => a + c.score, 0) / scoredCheckins.length) : 0;
+  // The window both charts describe. Oldest → newest for the grid.
+  const windowNewestFirst = symptomCheckins.slice(0, WINDOW);
+  const windowOldestFirst = [...windowNewestFirst].reverse();
+  const windowTotal       = windowNewestFirst.length;
+
+  // Frequency across the window. Sorted most reported first.
+  const frequencyRows = (() => {
+    const counts: Record<string, number> = {};
+    windowNewestFirst.forEach(c => c.reported.forEach(k => { counts[k] = (counts[k] || 0) + 1; }));
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([key, count]) => ({ key, count }));
+  })();
+
+  // Grid rows: the symptoms that actually appear in the window, capped so the
+  // grid stays readable on a phone.
+  const gridKeys    = frequencyRows.slice(0, 5).map(r => r.key);
+  const gridColumns = windowOldestFirst.map(c => ({
+    date: formatShortDate(c.created_at),
+    reported: new Set(c.reported),
+  }));
+
   const checkinsWithPhotos = checkins.filter(c => (c.photos?.length || 0) > 0);
-  const sparkData          = [...scoredCheckins].reverse().map(c => ({ score: c.score, triage: c.triage, date: formatShortDate(c.created_at), label: triageLabel[c.triage] || 'Check-in', isBaseline: !!c.is_baseline }));
 
   // Onboarding baseline photos only render from local context when they never
   // made it into checkin_photos,otherwise the same photo would show twice.
- const baselineInDb    = checkins.some(c => c.is_baseline && (c.photos?.length || 0) > 0);
+  const baselineInDb    = checkins.some(c => c.is_baseline && (c.photos?.length || 0) > 0);
   const localBaselines  = baselineInDb
     ? []
     : baselinePhotos.filter((p): p is typeof p & { dataUrl: string } => !!p.dataUrl);
   const totalPhotoCount = checkinsWithPhotos.reduce((n, c) => n + (c.photos?.length || 0), 0) + localBaselines.length;
 
-  const firstCheckinMonth  = scoredCheckins.length > 0
-    ? new Date(scoredCheckins[scoredCheckins.length - 1].created_at).toLocaleDateString('en-GB', { month: 'short' })
+  const firstCheckinMonth = symptomCheckins.length > 0
+    ? new Date(symptomCheckins[symptomCheckins.length - 1].created_at).toLocaleDateString('en-GB', { month: 'short' })
     : '—';
 
-  // Trend needs at least 4 real symptom check-ins to say anything —
-  // below that it stays quiet rather than inventing a direction.
-  const getTrend = () => {
-    if (scoredCheckins.length < 4) return '';
-    const recent = scoredCheckins.slice(0, 3).map(c => c.score);
-    const older  = scoredCheckins.slice(3, 6).map(c => c.score);
-    if (older.length === 0) return '';
-    const diff = (recent.reduce((a, b) => a + b, 0) / recent.length) - (older.reduce((a, b) => a + b, 0) / older.length);
-    if (diff > 8)  return '↑ Improving,your recent check-ins are scoring better than before.';
-    if (diff < -8) return '↓ Watch closely,your recent scores have dipped compared to earlier.';
-    return '→ Stable,your scalp health has been consistent.';
-  };
-
-  // Only real symptom keys with string severity values,never meta/score keys
-  const getTopSymptoms = () => {
-    const counts: Record<string, number> = {};
-    scoredCheckins.forEach(c => Object.entries(c.symptoms || {}).forEach(([key, val]) => {
-      if (isMetaKey(key)) return;
-      if (typeof val !== 'string') return;
-      if (val && val !== 'None' && val !== 'Normal' && val !== 'No change') counts[key] = (counts[key] || 0) + 1;
-    }));
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([key, count]) => ({ key, count }));
-  };
+  const enoughForCharts = symptomCheckins.length >= MIN_CHECKINS_FOR_CHART;
+  const remainingToChart = Math.max(MIN_CHECKINS_FOR_CHART - symptomCheckins.length, 0);
 
   // Responsive rules live here because inline styles cannot carry media queries.
   const responsiveCss = `
@@ -728,18 +705,16 @@ const HistoryPage = () => {
     .fs-shell { max-width: 1080px; margin: 0 auto; width: 100%; }
     .fs-hero { padding: 52px 20px 24px; }
     .fs-body { padding: 20px 20px 0; }
-    .fs-metrics { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+    .fs-metrics { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
     .fs-photo-grid { display: grid; grid-template-columns: minmax(0,1fr); gap: 14px; }
-    .fs-health { display: grid; grid-template-columns: minmax(0,1fr); gap: 16px; align-items: start; }
+    .fs-health { display: grid; grid-template-columns: minmax(0,1fr); gap: 16px; align-items: start; max-width: 760px; }
     .fs-tabs { display: flex; gap: 4px; padding: 4px; background: rgba(255,255,255,0.07); border-radius: 14px; }
     @media (min-width: 700px) {
-      .fs-metrics { grid-template-columns: repeat(4, minmax(0,1fr)); }
       .fs-photo-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
     }
     @media (min-width: 900px) {
       .fs-hero { padding: 44px 24px 20px; }
       .fs-body { padding: 20px 24px 0; }
-      .fs-health { grid-template-columns: 1.6fr 1fr; }
       .fs-tabs { max-width: 380px; }
     }
     @media (min-width: 1000px) {
@@ -780,11 +755,10 @@ const HistoryPage = () => {
             </div>
           </div>
 
-          {/* Summary metrics,replaces the old single pill */}
-          {(scoredCheckins.length > 0 || totalPhotoCount > 0) && (
+          {/* Summary metrics,counts only, no average score */}
+          {(symptomCheckins.length > 0 || totalPhotoCount > 0) && (
             <div className="fs-metrics">
-              <MetricCard label="Check-ins" value={scoredCheckins.length} />
-              <MetricCard label="Avg score" value={avgScore || '—'} />
+              <MetricCard label="Check-ins" value={symptomCheckins.length} />
               <MetricCard label="Photos" value={totalPhotoCount} />
               <MetricCard label="Since" value={firstCheckinMonth} />
             </div>
@@ -818,12 +792,6 @@ const HistoryPage = () => {
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
                       <p style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
                         All photos · newest first
-                        {baselineRisk && (
-                          <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, marginLeft: 8, color: baselineRisk === 'green' ? C.green : baselineRisk === 'amber' ? C.goldDeep : C.red }}>
-                            baseline: {baselineRisk === 'green' ? 'looking good' : baselineRisk === 'amber' ? 'worth watching' : 'needs attention'}
-                            {baselineDate ? ` · ${formatShortDate(baselineDate)}` : ''}
-                          </span>
-                        )}
                       </p>
                       <div style={{ display: 'flex', gap: 8 }}>
                         {checkinsWithPhotos.length >= 2 && (
@@ -885,85 +853,70 @@ const HistoryPage = () => {
 
             {tab === 'health' && (
               <motion.div key="health" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-                {scoredCheckins.length === 0 ? (
-                  <EmptyState icon={<TrendingUp size={28} color={C.goldDeep} />} title="No data yet" desc="Complete your first scalp check-in and your health trends will appear here." />
+                {symptomCheckins.length === 0 ? (
+                  <EmptyState icon={<TrendingUp size={28} color={C.goldDeep} />} title="Nothing logged yet" desc="Complete your first scalp check-in and what you log will start showing up here." />
                 ) : (
                   <>
-                    <div className="fs-health" style={{ marginBottom: 16 }}>
-                      <div style={{ background: '#101A14', border: '1px solid rgba(110,158,130,0.12)', borderRadius: 20, padding: '20px 16px 14px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                          <div>
-                            <p style={{ fontFamily: playfair, fontSize: 15, fontWeight: 500, color: C.ink, margin: 0 }}>Scalp health score</p>
-                            <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: '2px 0 0' }}>
-                              {scoredCheckins.length === 1 ? 'Your starting point' : `Last ${Math.min(scoredCheckins.length, 6)} check-ins`}
-                            </p>
-                          </div>
-                          <div style={{ background: C.gold10, borderRadius: 100, padding: '4px 12px', fontFamily: dm, fontSize: 12, fontWeight: 700, color: C.goldDeep, border: `1px solid ${C.goldBorder}` }}>{avgScore} avg</div>
-                        </div>
-                        <SparkLine data={sparkData.slice(-6)} />
-                        {scoredCheckins.length === 1 && (
-                          <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: '8px 0 0', lineHeight: 1.5, textAlign: 'center' }}>
-                            One point so far. Your next check-in draws the line.
-                          </p>
-                        )}
-                        <div style={{ display: 'flex', gap: 16, marginTop: 10, flexWrap: 'wrap' }}>
-                          {[{ c: '#5A9A50', l: 'Good' }, { c: C.gold, l: 'Watch' }, { c: '#B05040', l: 'Concern' }].map(x => (
-                            <div key={x.l} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                              <div style={{ width: 7, height: 7, borderRadius: '50%', background: x.c }} />
-                              <span style={{ fontFamily: dm, fontSize: 10, color: C.muted }}>{x.l}</span>
-                            </div>
+                    {!enoughForCharts && (
+                      <div style={{ ...cardStyle, borderRadius: 18, padding: '18px 18px 16px', marginBottom: 16, maxWidth: 760 }}>
+                        <p style={{ fontFamily: playfair, fontSize: 15, fontWeight: 500, color: C.ink, margin: 0 }}>Keep logging</p>
+                        <p style={{ fontFamily: dm, fontSize: 12, color: C.warm, margin: '6px 0 14px', lineHeight: 1.6 }}>
+                          You have {symptomCheckins.length} check-in{symptomCheckins.length !== 1 ? 's' : ''} so far.
+                          Log {remainingToChart} more and your patterns will appear here.
+                        </p>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          {Array.from({ length: MIN_CHECKINS_FOR_CHART }).map((_, i) => (
+                            <div key={i} style={{ flex: 1, height: 5, borderRadius: 3, background: i < symptomCheckins.length ? C.gold : 'rgba(255,255,255,0.07)' }} />
                           ))}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                            <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'transparent', border: `2px solid ${C.gold}` }} />
-                            <span style={{ fontFamily: dm, fontSize: 10, color: C.muted }}>Baseline</span>
-                          </div>
                         </div>
                       </div>
+                    )}
 
-                      <div>
-                        {getTrend() && (
-                          <div style={{ background: 'rgba(110,158,130,0.08)', border: '1px solid rgba(110,158,130,0.18)', borderRadius: 14, padding: '12px 16px', marginBottom: 12, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                            <span style={{ fontSize: 16, flexShrink: 0 }}>💡</span>
-                            <p style={{ fontFamily: dm, fontSize: 13, color: C.goldDeep, margin: 0, lineHeight: 1.6, fontWeight: 500 }}>{getTrend()}</p>
-                          </div>
-                        )}
+                    {enoughForCharts && (
+                      <div className="fs-health" style={{ marginBottom: 16 }}>
+                        <div style={{ background: '#101A14', border: '1px solid rgba(110,158,130,0.12)', borderRadius: 18, padding: '16px 16px 14px' }}>
+                          <p style={{ fontFamily: playfair, fontSize: 15, fontWeight: 500, color: C.ink, margin: 0 }}>What you've logged</p>
+                          <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: '2px 0 16px' }}>
+                            Across your last {windowTotal} check-in{windowTotal !== 1 ? 's' : ''}
+                          </p>
+                          {frequencyRows.length > 0 ? (
+                            <FrequencyBars rows={frequencyRows} total={windowTotal} />
+                          ) : (
+                            <p style={{ fontFamily: dm, fontSize: 12, color: C.warm, margin: 0, lineHeight: 1.6 }}>
+                              You have not reported any symptoms in this period.
+                            </p>
+                          )}
+                        </div>
 
-                        {getTopSymptoms().length > 0 && (
-                          <div style={{ background: '#101A14', border: '1px solid rgba(110,158,130,0.12)', borderRadius: 16, padding: '14px 16px' }}>
-                            <p style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 12px' }}>Most reported</p>
-                            {getTopSymptoms().map((s, i, arr) => (
-                              <div key={s.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: i < arr.length - 1 ? 10 : 0, marginBottom: i < arr.length - 1 ? 10 : 0, borderBottom: i < arr.length - 1 ? `1px solid ${C.mid}` : 'none' }}>
-                                <p style={{ fontFamily: dm, fontSize: 13, color: C.ink, fontWeight: 500, margin: 0, textTransform: 'capitalize' }}>{s.key}</p>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                  <div style={{ width: 60, height: 4, borderRadius: 2, background: C.mid, overflow: 'hidden' }}>
-                                    <div style={{ width: `${Math.min((s.count / scoredCheckins.length) * 100, 100)}%`, height: '100%', background: C.gold, borderRadius: 2 }} />
-                                  </div>
-                                  <span style={{ fontFamily: dm, fontSize: 11, color: C.muted }}>{s.count}×</span>
-                                </div>
-                              </div>
-                            ))}
+                        {gridKeys.length > 0 && (
+                          <div style={{ background: '#101A14', border: '1px solid rgba(110,158,130,0.12)', borderRadius: 18, padding: 16 }}>
+                            <p style={{ fontFamily: playfair, fontSize: 15, fontWeight: 500, color: C.ink, margin: 0 }}>Check-in by check-in</p>
+                            <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, margin: '2px 0 14px' }}>
+                              A filled dot means you reported it that day
+                            </p>
+                            <CheckInGrid keys={gridKeys} columns={gridColumns} />
                           </div>
                         )}
                       </div>
-                    </div>
+                    )}
 
                     <p style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>Check-in log</p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {scoredCheckins.map((c, i) => (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 760 }}>
+                      {symptomCheckins.map((c, i) => (
                         <motion.div key={c.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
                           style={{ background: '#101A14', border: '1px solid rgba(110,158,130,0.10)', borderRadius: 16, padding: '13px 16px', display: 'flex', alignItems: 'center', gap: 14 }}>
-                          <div style={{ position: 'relative', width: 42, height: 42, flexShrink: 0 }}>
-                            <svg width={42} height={42} viewBox="0 0 42 42">
-                              <circle cx={21} cy={21} r={17} fill="none" stroke={C.surface} strokeWidth={3} />
-                              <circle cx={21} cy={21} r={17} fill="none" stroke={triageColor[c.triage] || C.gold} strokeWidth={3} strokeDasharray={`${(c.score / 100) * 107} 107`} strokeLinecap="round" transform="rotate(-90 21 21)" />
-                            </svg>
-                            <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: dm, fontSize: 10, fontWeight: 700, color: C.ink }}>{c.score}</span>
+                          <div style={{ width: 38, height: 38, borderRadius: '50%', background: C.gold10, border: `1px solid ${C.goldBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <span style={{ fontFamily: dm, fontSize: 14, fontWeight: 600, color: C.gold }}>{c.reported.length}</span>
                           </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <p style={{ fontFamily: playfair, fontSize: 14, fontWeight: 500, color: C.ink, margin: 0 }}>{formatDate(c.created_at)}</p>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
-                              <span style={{ fontFamily: dm, fontSize: 11, fontWeight: 600, color: triageColor[c.triage], background: triageBg[c.triage], padding: '1px 9px', borderRadius: 100 }}>{triageLabel[c.triage]}</span>
-                              <span style={{ fontFamily: dm, fontSize: 10, color: C.muted }}>{c.is_baseline ? 'baseline' : c.type}</span>
+                              <span style={{ fontFamily: dm, fontSize: 11, color: C.warm }}>
+                                {c.reported.length === 0
+                                  ? 'nothing reported'
+                                  : `${c.reported.length} thing${c.reported.length !== 1 ? 's' : ''} logged`}
+                              </span>
+                              <span style={{ fontFamily: dm, fontSize: 10, color: C.muted }}>· {c.is_baseline ? 'baseline' : c.type}</span>
                               {(c.photos?.length || 0) > 0 && (
                                 <span style={{ fontFamily: dm, fontSize: 10, color: C.muted }}>· {c.photos?.length} photo{(c.photos?.length || 0) !== 1 ? 's' : ''}</span>
                               )}
