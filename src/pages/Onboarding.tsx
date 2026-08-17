@@ -14,7 +14,7 @@ import {
   computeMaleTriageRisk, getSeverityTransitionText, getSeverityLevel,
 } from '@/utils/maleTriageLogic';
 import { scoreSymptom, scoreToRisk } from '@/utils/symptomScoring';
-
+import { syncOnboardingProfile } from '@/services/onboardingProfileService';
 import scalpFrontFemale from '@/assets/scalp-front-female.jpeg';
 import scalpSideFemale from '@/assets/scalp-side-female.jpeg';
 import scalpBackFemale from '@/assets/scalp-back-female.jpeg';
@@ -520,8 +520,12 @@ const Onboarding = () => {
   });
 
   const saveAndComplete = (checkIn: CheckInData, risk: 'green' | 'amber' | 'red', dest: string = '/home') => {
-    setOnboardingData({ ...onboardingData, hairType: hairSubType || hairType, chemicalProcessing: chemicalStatus, chemicalProcessingMultiple: chemicalTypes, chemicalFrequency: chemicalFreq, lastChemicalTreatment: lastTreatment, protectiveStyles: styles, otherStyle, protectiveStyleFrequency: protectiveFreq, barberFrequency: barberFreq, cycleLength, betweenWashCare: betweenWash, otherBetweenWashCare: otherBetween, goals: concerns, norwoodBaseline: norwoodStage, familyHistory: mFamilyHistory, cutCadence: mCutCadence });
-    setCurrentCheckIn(checkIn); addToCheckInHistory(checkIn); setBaselineRisk(risk); setBaselineDate(new Date().toISOString());
+    // Build once and use for both the context update and the database write.
+    // Passing `onboardingData` to the save instead of this object is a stale
+    // closure: it is the value from before setOnboardingData runs, so only the
+    // fields set on earlier steps (gender) reach the database.
+    const merged = { ...onboardingData, hairType: hairSubType || hairType, chemicalProcessing: chemicalStatus, chemicalProcessingMultiple: chemicalTypes, chemicalFrequency: chemicalFreq, lastChemicalTreatment: lastTreatment, protectiveStyles: styles, otherStyle, protectiveStyleFrequency: protectiveFreq, barberFrequency: barberFreq, cycleLength, betweenWashCare: betweenWash, otherBetweenWashCare: otherBetween, goals: concerns, norwoodBaseline: norwoodStage, familyHistory: mFamilyHistory, cutCadence: mCutCadence };
+    setOnboardingData(merged);
     // Save numeric scores to Supabase baseline check-in
     import('@/lib/supabaseClient').then(({ supabase }) => {
       supabase.auth.getSession().then(({ data: { session } }) => {
@@ -544,17 +548,24 @@ const Onboarding = () => {
             flaking: checkIn.flaking, shedding: checkIn.shedding, bumps: checkIn.bumps, dryness: checkIn.dryness,
             ...numericScores, total_score: total, risk_level: scoreToRisk(total),
           },
+         // Score COLUMNS, not just the jsonb. Without these the columns sit at
+          // their default of 0 while symptoms holds the real answers, which is
+          // what made the clinician summary read "0 of 20" on a check-in where
+          // two symptoms were reported.
+          ...numericScores,
+          total_score:   total,
           triage_result: scoreToRisk(total),
           is_baseline: true,
         }).then(({ error }) => { if (error) console.error('[Onboarding] baseline save error:', error); });
-        // Persist hair goals to the profile (requires the hair_goals text[] migration).
-        // Kept separate so a failure here never blocks onboarding completion.
         supabase.from('consumer_profiles').update({ hair_goals: concerns })
           .eq('user_id', session.user.id)
           .then(({ error }) => { if (error) console.error('[Onboarding] hair_goals save error:', error); });
       });
     });
-    sessionStorage.setItem('follisense-just-onboarded', 'true'); setOnboardingComplete(true); navigate(dest);
+    syncOnboardingProfile(merged);
+    sessionStorage.setItem('follisense-just-onboarded', 'true');
+    setOnboardingComplete(true);
+    navigate(dest);
   };
 
   const handlePhotosComplete = (photos: { area: string; dataUrl: string }[]) => {

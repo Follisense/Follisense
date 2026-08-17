@@ -634,7 +634,8 @@ const RoutineTracker = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         const iso = newDue ? format(newDue, 'yyyy-MM-dd') : null;
-        await supabase.from('consumer_profiles').update({ style_due_date: iso }).eq('user_id', session.user.id);
+        await supabase.from('consumer_profiles')
+          .upsert({ user_id: session.user.id, style_due_date: iso }, { onConflict: 'user_id' });
         // Keep the open cycle's planned takedown in sync
         if (iso) {
           await supabase.from('style_cycles')
@@ -663,9 +664,8 @@ const RoutineTracker = () => {
           .update({ ended_at: today })
           .eq('user_id', uid)
           .is('ended_at', null);
-        await supabase.from('consumer_profiles')
-          .update({ style_due_date: null, current_style_start_date: null })
-          .eq('user_id', uid);
+       await supabase.from('consumer_profiles')
+          .upsert({ user_id: uid, style_due_date: null, current_style_start_date: null }, { onConflict: 'user_id' });
         await supabase.from('profiles')
           .update({ current_style_start_date: null })
           .eq('id', uid);
@@ -710,12 +710,13 @@ const RoutineTracker = () => {
           expected_weeks:   expectedWeeks,
           planned_takedown: dueIso,
         });
-        await supabase.from('consumer_profiles').update({
+        await supabase.from('consumer_profiles').upsert({
+          user_id:                  uid,
           current_styles:           [resolvedNextStyle],
           current_style_start_date: today,
           style_due_date:           dueIso,
           style_duration:           durLabel,
-        }).eq('user_id', uid);
+        }, { onConflict: 'user_id' });
         await supabase.from('profiles').update({ current_style_start_date: today }).eq('id', uid);
       }
       setStyleStartDate(today);

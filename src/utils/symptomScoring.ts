@@ -197,6 +197,11 @@ export const buildNumericPayload = (answers: Record<string, string>) => {
     hair_breakage_score:    scores.hairBreakage,
     hair_appearance_score:  scores.hairAppearance,
     hair_concern_score:     scores.hairConcern,
+    // These two columns exist on the table but were never in this payload, so
+    // they could not be anything but 0. Scored from answers directly because
+    // scoreSymptoms() only covers its fixed key set.
+    bumps_score:            scoreSymptom('bumps',   answers.bumps),
+    dryness_score:          scoreSymptom('dryness', answers.dryness),
     total_score:            scores.total,
     // risk_level now respects the severe-symptom floor
     risk_level:             scoreToRiskWithFlags(scores),

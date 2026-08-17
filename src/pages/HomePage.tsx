@@ -9,7 +9,8 @@ import { Calendar as CalendarPicker } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { useGeneratedProducts, GeneratedProduct } from '@/data/useGeneratedProducts';
-
+import { factOfTheDay } from '@/data/scalpFacts';
+import { syncOnboardingProfile } from '@/services/onboardingProfileService';
 const serviceOptions = [
   'Wash', 'Treatment', 'Style installation', 'Style removal/takedown',
   'Trim', 'Colour', 'Lineup or shape-up', 'Retwist (locs)',
@@ -36,17 +37,6 @@ const C = {
   cardBg:     '#F3F5EF',
 };
 
-// ── Daily "did you know" facts,rotate by date, tap through to Know It ──
-// Education only: no product or treatment claims, ever.
-const scalpFacts = [
-  'Type 4 hair is the most fragile texture, not the strongest,it needs the gentlest handling.',
-  'Shrinkage can hide up to 75% of your real length. Shrinkage is health, not a problem.',
-  'Your scalp renews its skin roughly every 28 days,about one style cycle.',
-  'Traction alopecia is one of the most reversible types of hair loss when caught early.',
-  'Hair grows about 1cm a month on average. Retention, not growth, is where length is won.',
-  'Flakes from buildup and flakes from dandruff look similar but behave differently over time.',
-  'Edges are the finest, most fragile hairs on your head,they take the most tension in styles.',
-];
 
 const parseCycleLengthToDays = (raw: string): number => {
   if (!raw) return 28;
@@ -281,7 +271,7 @@ const ProductCard = ({ product, index }: { product: GeneratedProduct; index: num
 };
 
 // ─── HERO STATE TYPES ──────────────────────────────────────────────────────────
-type HeroState = 'loading' | 'attention' | 'takedown' | 'routine';
+type HeroState = 'loading' | 'start' | 'attention' | 'takedown' | 'routine';
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 const HomePage = () => {
@@ -375,6 +365,10 @@ const HomePage = () => {
 
   useEffect(() => { localStorage.setItem('follisense-last-home-visit', String(Date.now())); }, []);
 
+  // Writes the onboarding answers up to consumer_profiles. Runs here rather
+  // than in Onboarding because context has settled by the time HomePage mounts.
+  // Only writes fields that have a value, so it also backfills existing users.
+  useEffect(() => { syncOnboardingProfile(onboardingData); }, []);
   useEffect(() => {
     if (checkInCount >= 3 && !research.consented && !research.dismissed) {
       const t = setTimeout(() => setShowResearchPrompt(true), 1500);
@@ -390,7 +384,7 @@ const HomePage = () => {
   const greeting     = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
   // ── Today's fact,same fact all day for everyone, rotates by date ──
-  const todaysFact = scalpFacts[new Date().getDate() % scalpFacts.length];
+  const todaysFact = factOfTheDay();
 
   // ── Monthly check-in progress,fills the hero bar (4 per month by default) ──
   const monthlyProgress = profileLoaded
@@ -408,8 +402,15 @@ const HomePage = () => {
   // The banner is reserved for check-in encouragement: new users with zero
   // check-ins see the standard routine banner (0 of 4 this month) rather than
   // a special onboarding card.
+  // A user with no style start date and no check-ins has told us nothing about
+  // a cycle. The routine banner would show "Day 0 of 28 · your style", which is
+  // a cycle she never entered, presented as fact.
+  const hasAnyData = checkInCount > 0 || !!styleStartDate;
+
   const heroState: HeroState = !profileLoaded
     ? 'loading'
+    : !hasAnyData
+    ? 'start'
     : latestRiskLevel === 'red'
     ? 'attention'
     : (daysUntilDue !== null && daysUntilDue <= 5)
@@ -485,6 +486,29 @@ const HomePage = () => {
         <div style={{ width: '100%', background: 'linear-gradient(135deg, #23392C 0%, #2E4A39 50%, #1A2820 100%)', borderRadius: 22, padding: '18px 20px', marginBottom: 28 }}>
           <p style={{ fontFamily: dm, fontSize: 12, color: 'rgba(245,247,242,0.6)', margin: 0 }}>Loading routine</p>
         </div>
+      );
+    }
+
+    if (heroState === 'start') {
+      return (
+        <motion.button onClick={() => navigate('/scalp-check')}
+          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+          whileTap={{ scale: 0.98 }}
+          style={{ width: '100%', background: 'linear-gradient(135deg, #23392C 0%, #2E4A39 50%, #1A2820 100%)', borderRadius: 22, padding: '18px 20px', marginBottom: 28, border: 'none', display: 'flex', alignItems: 'center', gap: 16, cursor: 'pointer', textAlign: 'left', position: 'relative', overflow: 'hidden', boxShadow: '0 6px 24px rgba(26,40,32,0.18)' }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, rgba(143,178,158,0.4), transparent)' }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontFamily: dm, fontSize: 10, color: 'rgba(245,247,242,0.55)', margin: '0 0 4px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+              Getting started
+            </p>
+            <p style={{ fontFamily: playfair, fontSize: 19, fontWeight: 500, color: '#F5F7F2', margin: '0 0 5px', lineHeight: 1.25 }}>
+              Start your first check-in
+            </p>
+            <p style={{ fontFamily: dm, fontSize: 10, color: 'rgba(245,247,242,0.55)', margin: 0, lineHeight: 1.55 }}>
+              A minute of questions about how your scalp feels. Everything after this compares against it.
+            </p>
+          </div>
+          <ChevronRight size={16} color={C.gold} strokeWidth={1.8} style={{ flexShrink: 0 }} />
+        </motion.button>
       );
     }
 
