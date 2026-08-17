@@ -221,7 +221,7 @@ const App = () => {
                   <Route path="/product-guide" element={<ProductDirectory />} />
                   <Route path="/wishlist" element={<WishlistPage />} />
                   <Route path="/shop" element={<Navigate to="/products" replace />} />
-
+                  <Route path="/clinician/:userId" element={<ClinicianSummary />} />
                   {/* Catch-all stays last. */}
                   <Route path="*" element={<NotFound />} />
                 </Routes>
