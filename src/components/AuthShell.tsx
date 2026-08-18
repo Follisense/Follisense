@@ -73,7 +73,7 @@ const Texture = ({ color, opacity }: { color: string; opacity: number }) => (
 // wordmark above the content. From 900px: two columns, brand panel on the left,
 // form on the right. No dark shell gutters at any width any more.
 const authCss = `
-  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Instrument+Sans:wght@400;500;600&display=swap');
+ 
   html, body, #root { background: ${T.surface}; }
   .auth-root { min-height: 100dvh; display: grid; grid-template-columns: 1fr; background: ${T.surface}; }
   .auth-brand { display: none; }

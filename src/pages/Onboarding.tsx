@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/lib/supabaseClient';
-import { computeHistoricalRisk } from '@/utils/triageLogic';
+import { computeCheckInStatus } from '@/utils/checkInRules';
 import type { CheckInData } from '@/contexts/AppContext';
 import ScalpBaselineCapture from '@/components/ScalpBaselineCapture';
 import NorwoodScale from '@/components/NorwoodScale';
@@ -1123,7 +1123,7 @@ const Onboarding = () => {
                                   else {
                                     const allRes = { ...symptomResponses, [sym.key]: sev };
                                     const checkIn = buildCheckIn(allRes);
-                                    const risk = isMale ? computeMaleTriageRisk(checkIn, [], norwoodStage, norwoodStage) : computeHistoricalRisk(checkIn, []);
+                                    const risk = isMale ? computeMaleTriageRisk(checkIn, [], norwoodStage, norwoodStage) : computeCheckInStatus(checkIn, []);
                                     setTriageResult(risk); setSymptomPhase('thanks');
                                   }
                                 };

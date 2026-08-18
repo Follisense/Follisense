@@ -109,9 +109,7 @@ const ArticleView = ({ article, coverImage, onBack, onNavigate }: ArticleViewPro
         exit={{ opacity: 0, y: -16 }}
         transition={{ duration: 0.25 }}
       >
-        <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Playfair+Display:wght@500;600&display=swap');
-        `}</style>
+        
 
         {/* ── Top back link ── */}
         <div style={{ padding: '16px 20px 0' }}>

@@ -2,12 +2,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Check, Eye, AlertCircle, ArrowLeft, Search, ChevronRight } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
-import { computeHistoricalRisk, getTriageGuidance } from '@/utils/triageLogic';
+import { computeCheckInStatus, getTriageGuidance } from '@/utils/checkInRules';
 import { scoreSymptoms, scoreToRiskWithFlags } from '@/utils/symptomScoring';
 import type { HealthProfileData } from '@/contexts/AppContext';
 
 const dm       = "'DM Sans', sans-serif";
 const playfair = "'Playfair Display', serif";
+
 
 type RiskLevel = 'green' | 'amber' | 'red';
 
@@ -110,7 +111,7 @@ const NumberBadge = ({ n, color }: { n: number; color: string }) => (
 
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 
-const RiskOutput = () => {
+const CheckInSummary = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { currentCheckIn, riskOverride, setRiskOverride, healthProfile, onboardingData, checkInHistory } = useApp();
@@ -133,8 +134,8 @@ const RiskOutput = () => {
     }
   }
   catch (e) {
-    console.error('[RiskOutput]', e);
-    try { historicalRisk = currentCheckIn ? computeHistoricalRisk(currentCheckIn, checkInHistory) : 'green'; }
+    console.error('[CheckInSummary]', e);
+        try { historicalRisk = currentCheckIn ? computeCheckInStatus(currentCheckIn, checkInHistory) : 'green'; }
     catch {}
   }
 
@@ -153,7 +154,7 @@ const RiskOutput = () => {
 
   let triageGuidance: { heading: string; message: string }[] = [];
   try { triageGuidance = currentCheckIn ? getTriageGuidance(risk, currentCheckIn, checkInHistory) : []; }
-  catch (e) { console.error('[RiskOutput]', e); }
+  catch (e) { console.error('[CheckInSummary]', e); }
 
   const telogenTriggers = hasTelogenTriggers(healthProfile);
 
@@ -493,4 +494,4 @@ const RiskOutput = () => {
   );
 };
 
-export default RiskOutput;
+export default CheckInSummary;

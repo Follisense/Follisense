@@ -15,7 +15,7 @@ import BaselineResponse from "./pages/BaselineResponse";
 import HomePage from "./pages/HomePage";
 import MidCycleCheckIn from "./pages/MidCycleCheckIn";
 import WashDayAssessment from "./pages/WashDayAssessment";
-import RiskOutput from "./pages/RiskOutput";
+import CheckInSummary from "./pages/CheckInSummary";
 import ClinicianSummary from "./pages/ClinicianSummary";
 import HealthProfile from "./pages/HealthProfile";
 import HistoryPage from "./pages/HistoryPage";
@@ -189,7 +189,7 @@ const App = () => {
                   <Route path="/chat" element={<ChatPage />} />
                   <Route path="/mid-cycle" element={<MidCycleCheckIn />} />
                   <Route path="/wash-day" element={<WashDayAssessment />} />
-                  <Route path="/results" element={<RiskOutput />} />
+                  <Route path="/results" element={<CheckInSummary />} />
                   <Route path="/clinician-summary" element={<ClinicianSummary />} />
                   <Route path="/health-profile" element={<HealthProfile />} />
                   <Route path="/research" element={<ResearchProgramme />} />

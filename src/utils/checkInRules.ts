@@ -32,7 +32,7 @@ const isSymptomPresent = (value: string | undefined): boolean => {
  *        symptom persisting 3+ check-ins without improvement,
  *        worsening trend from amber.
  */
-export const computeHistoricalRisk = (
+export const computeCheckInStatus = (
   current: CheckInData,
   history: CheckInData[]
 ): RiskLevel => {

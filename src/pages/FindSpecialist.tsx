@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Mail, CheckCircle, ShieldCheck, MapPin, FileText, Stethoscope } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { supabase } from '@/lib/supabaseClient';
 
 const dm       = "'DM Sans', sans-serif";
 const playfair = "'Playfair Display', serif";
@@ -41,19 +42,54 @@ const FEATURES = [
   },
 ];
 
+// Good enough to catch typos without rejecting valid unusual addresses.
+// The old check was email.includes('@'), which accepted "@" on its own.
+const looksLikeEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+
 const FindSpecialist = () => {
   const navigate = useNavigate();
   const [email, setEmail]         = useState('');
   const [region, setRegion]       = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving]       = useState(false);
 
-  const handleNotify = () => {
-    if (!email.includes('@')) {
-      toast({ title: 'Enter a valid email', description: 'Please enter your email address.' });
+  // Writes to specialist_waitlist. Previously this only flipped a local flag,
+  // so every address entered here was thrown away.
+  const handleNotify = async () => {
+    if (saving) return;
+
+    if (!looksLikeEmail(email)) {
+      toast({ title: 'Enter a valid email', description: 'Please check the address and try again.' });
       return;
     }
-    setSubmitted(true);
-    toast({ title: "You're on the list", description: "We'll be in touch when the directory covers your area." });
+
+    setSaving(true);
+    try {
+      // user_id is optional: the page is reachable while signed in, but the
+      // waitlist should still work if it is ever linked publicly.
+      const { data: { session } } = await supabase.auth.getSession();
+
+      const { error } = await supabase.from('specialist_waitlist').insert({
+        user_id: session?.user?.id ?? null,
+        email:   email.trim().toLowerCase(),
+        region:  region.trim() || null,
+      });
+
+      // 23505 = unique violation on the email index. They are already on the
+      // list, which is not a failure from the user's point of view.
+      if (error && error.code !== '23505') throw error;
+
+      setSubmitted(true);
+      toast({ title: "You're on the list", description: "We'll be in touch when the directory covers your area." });
+    } catch (e) {
+      console.error('[FindSpecialist] waitlist insert failed:', e);
+      toast({
+        title: 'That did not save',
+        description: 'Something went wrong on our side. Please try again in a moment.',
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -74,7 +110,7 @@ const FindSpecialist = () => {
       }}>
         {/* Nav */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 40, position: 'relative' }}>
-          <button onClick={() => navigate(-1)} style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <button onClick={() => navigate(-1)} aria-label="Back" style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <ArrowLeft size={16} color={C.sub} strokeWidth={1.8} />
           </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -165,6 +201,7 @@ const FindSpecialist = () => {
                 value={region}
                 onChange={e => setRegion(e.target.value)}
                 placeholder="City or country"
+                disabled={saving}
                 style={{
                   width: '100%', height: 48, padding: '0 16px',
                   borderRadius: 14, border: `1.5px solid rgba(110,158,130,0.20)`,
@@ -180,6 +217,7 @@ const FindSpecialist = () => {
                 onChange={e => setEmail(e.target.value)}
                 placeholder="your@email.com"
                 onKeyDown={e => e.key === 'Enter' && handleNotify()}
+                disabled={saving}
                 style={{
                   width: '100%', height: 48, padding: '0 16px',
                   borderRadius: 14, border: `1.5px solid rgba(110,158,130,0.20)`,
@@ -189,13 +227,14 @@ const FindSpecialist = () => {
                   transition: 'border-color 0.15s',
                 }}
               />
-              <button onClick={handleNotify} style={{
+              <button onClick={handleNotify} disabled={saving} style={{
                 width: '100%', height: 50, borderRadius: 14, border: `1px solid ${C.greenBorder}`,
-                background: C.greenDeep,
-                color: '#F2F7F1', fontFamily: dm, fontSize: 14, fontWeight: 600,
-                cursor: 'pointer',
+                background: saving ? 'rgba(110,158,130,0.18)' : C.greenDeep,
+                color: saving ? C.sub : '#F2F7F1', fontFamily: dm, fontSize: 14, fontWeight: 600,
+                cursor: saving ? 'not-allowed' : 'pointer',
+                transition: 'background 0.2s, color 0.2s',
               }}>
-                Notify me
+                {saving ? 'Adding you…' : 'Notify me'}
               </button>
             </>
           ) : (

@@ -130,7 +130,7 @@ const AdminPage = () => {
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, fontFamily: dm, padding: '40px 20px 80px' }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap');
+      <style>{`
         .adm { max-width: 1000px; margin: 0 auto; }
         .adm-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
         @media (min-width: 760px) { .adm-grid { grid-template-columns: repeat(5, minmax(0,1fr)); } }
