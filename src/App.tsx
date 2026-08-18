@@ -56,6 +56,7 @@ import UserGeneratedProducts from './pages/UserGeneratedProducts';
 import ProductDetailPage from './pages/ProductDetailPage';
 import WishlistPage from './pages/WishlistPage';
 import { initAnalytics, grantAnalyticsConsent, trackPageview } from './lib/analytics'
+import CookieConsent from '@/components/CookieConsent';
 
 const queryClient = new QueryClient();
 
@@ -172,6 +173,7 @@ const App = () => {
           <BrowserRouter>
             <SessionGuard>
               <RouteTracker />
+              <CookieConsent />
               <Layout>
                 <Routes>
                   <Route path="/" element={<SplashScreen />} />

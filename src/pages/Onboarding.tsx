@@ -15,6 +15,7 @@ import {
 } from '@/utils/maleTriageLogic';
 import { scoreSymptom, scoreToRisk } from '@/utils/symptomScoring';
 import { syncOnboardingProfile } from '@/services/onboardingProfileService';
+import { trackOnboardingCompleted, trackBaselinePhotos, trackCheckInCompleted } from '@/lib/events';
 import scalpFrontFemale from '@/assets/scalp-front-female.jpeg';
 import scalpSideFemale from '@/assets/scalp-side-female.jpeg';
 import scalpBackFemale from '@/assets/scalp-back-female.jpeg';
@@ -375,6 +376,9 @@ const LengthCheckPhotos = ({ isShortHair, gender, onComplete, onSkip }: { isShor
   const [cur, setCur]     = useState(0);
   const [photos, setPhotos] = useState<{ area: string; dataUrl: string }[]>([]);
   const [preview, setPreview] = useState<string | null>(null);
+    // Whether baseline photos were captured. Analytics only, so the completion
+  // event can tell a photo-complete onboarding from a skipped one.
+  const [capturedPhotosCount, setCapturedPhotosCount] = useState(0);
   const step = steps[cur];
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (!f) return;
@@ -469,7 +473,7 @@ const Onboarding = () => {
   const [symptomAck, setSymptomAck]         = useState<string | null>(null);
   const [triageResult, setTriageResult]     = useState<'green' | 'amber' | 'red' | null>(null);
   const [lengthPhotos, setLengthPhotos]     = useState<{ area: string; dataUrl: string }[]>([]);
-
+  const [capturedPhotosCount, setCapturedPhotosCount] = useState(0);
   const maleHasShortStyles  = isMale && styles.some(s => ['Low cut / fade', 'Waves', 'Bald / shaved'].includes(s));
   const maleHasLongStyles   = isMale && styles.some(s => maleLongStyleNames.includes(s));
   const maleHasAfroOnly     = isMale && styles.includes('Afro') && !maleHasShortStyles && !maleHasLongStyles;
@@ -562,13 +566,17 @@ const Onboarding = () => {
           .then(({ error }) => { if (error) console.error('[Onboarding] hair_goals save error:', error); });
       });
     });
-    syncOnboardingProfile(merged);
+       syncOnboardingProfile(merged);
+    trackOnboardingCompleted({ gender, hasPhotos: capturedPhotosCount > 0 });
+    trackCheckInCompleted({ type: 'baseline', isBaseline: true });
     sessionStorage.setItem('follisense-just-onboarded', 'true');
     setOnboardingComplete(true);
     navigate(dest);
   };
 
-  const handlePhotosComplete = (photos: { area: string; dataUrl: string }[]) => {
+    const handlePhotosComplete = (photos: { area: string; dataUrl: string }[]) => {
+        trackBaselinePhotos(photos.length);
+    setCapturedPhotosCount(photos.length);
     setBaselinePhotos(photos.map(p => ({ area: p.area, captured: true, date: new Date().toISOString(), dataUrl: p.dataUrl }))); setStep(8); setSymptomPhase('transition');
   };
 

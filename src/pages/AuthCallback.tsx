@@ -12,7 +12,7 @@ import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/lib/supabaseClient';
-
+import { identifyOnLogin, trackLoggedIn } from '@/lib/events';
 const AuthCallback = () => {
   const navigate = useNavigate();
   const { setUserName, setOnboardingData, onboardingData, onboardingComplete, setOnboardingComplete } = useApp();
@@ -54,6 +54,11 @@ const AuthCallback = () => {
         }
 
         // 3. Onboarding check,same logic as LoginPage
+           // Google sign-in and sign-up both land here, so this is the only place
+        // the OAuth path can be identified.
+        identifyOnLogin(userId);
+        trackLoggedIn('google');
+
         const { data: consumerProfile } = await supabase
           .from('consumer_profiles')
           .select('user_id, hair_texture')

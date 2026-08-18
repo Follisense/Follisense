@@ -5,7 +5,7 @@ import { Eye, EyeOff, Shield, Mail, Lock, User } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from '@/hooks/use-toast';
-
+import { trackSignedUp } from '@/lib/events';
 import wordmark from '@/assets/wordmark-cream.png';
 
 const mont = "'Montserrat', sans-serif";
@@ -72,6 +72,11 @@ const SignUpPage = () => {
         .from('profiles')
         .upsert([{ id: authData.user.id, role: 'consumer', first_name: firstName.trim() }]);
       if (profileError) { setError(profileError.message); return; }
+
+          // No identify here: the session is torn down for OTP two lines below, so
+      // the user id is not usable yet. Identification happens on the OTP page,
+      // which is where a real session first exists.
+      trackSignedUp('email');
 
       setUserName(firstName.trim());
       setOnboardingData({ ...onboardingData });

@@ -5,7 +5,7 @@ import { Eye, EyeOff, Mail, Lock } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from '@/hooks/use-toast';
-
+import { identifyOnLogin, trackLoggedIn } from '@/lib/events';
 import wordmark from '@/assets/wordmark-cream.png';
 
 const mont = "'Montserrat', sans-serif";
@@ -62,7 +62,21 @@ const LoginPage = () => {
         .eq('id', data.user.id)
         .single();
 
-      const name = profile?.first_name || email.split('@')[0];
+      // Identify before any event, so this login and everything after it belongs
+      // to the person rather than to an anonymous browser.
+      identifyOnLogin(data.user.id);
+      trackLoggedIn('email');
+
+          // Identify before any event, so this login and everything after it belongs
+      // to the person rather than to an anonymous browser.
+      identifyOnLogin(data.user.id);
+      trackLoggedIn('email');
+      // Identify before any event, so this login and everything after it belongs
+      // to the person rather than to an anonymous browser.
+      identifyOnLogin(data.user.id);
+      trackLoggedIn('email');
+
+     const name = profile?.first_name || email.split('@')[0];
       setUserName(name);
       if (profile?.gender) {
         setOnboardingData({ ...onboardingData, gender: profile.gender });

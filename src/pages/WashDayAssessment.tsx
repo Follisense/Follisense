@@ -6,7 +6,7 @@ import { useApp } from '@/contexts/AppContext';
 import { scoreSymptoms, buildNumericPayload, buildPatternPayload } from '@/utils/symptomScoring';
 import { supabase } from '@/lib/supabaseClient';
 import ProductSearch from '@/components/ProductSearch';
-
+import { trackCheckInCompleted } from '@/lib/events';
 // Ported from Tailwind/shadcn tokens to the same inline-style system as
 // MidCycleCheckIn, so both halves of the check-in look like one app. Layout
 // comes from layout.css (.fs-flow / .fs-form-shell / .fs-flow-sheet), which
@@ -554,6 +554,11 @@ const WashDayAssessment = () => {
     } catch (err) {
       console.error('[WashDay] Unexpected Supabase error:', err);
     } finally {
+      trackCheckInCompleted({
+        type: 'wash_day',
+        isBaseline: false,
+        photoCount: photoSaved ? 1 : 0,
+      });
       setIsSaving(false);
       navigate('/results');
     }

@@ -5,7 +5,7 @@ import { ArrowLeft, X } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { scoreSymptoms, buildNumericPayload, buildPatternPayload } from '@/utils/symptomScoring';
 import { supabase } from '@/lib/supabaseClient';
-
+import { trackCheckInCompleted } from '@/lib/events';
 const dm       = "'DM Sans', sans-serif";
 const playfair = "'Playfair Display', serif";
 
@@ -184,9 +184,10 @@ const MidCycleCheckIn = () => {
       }
 
       sessionStorage.removeItem('active-checkin-id');
-    } catch (err) {
+       } catch (err) {
       console.error('[MidCycle] Unexpected error:', err);
     } finally {
+      trackCheckInCompleted({ type: 'mid_cycle', isBaseline: false });
       setIsSaving(false);
       navigate('/results');
     }

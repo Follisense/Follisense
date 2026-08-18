@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { scoreSymptom } from '@/utils/symptomScoring';
-
+import { trackReportViewed } from '@/lib/events';
+import { trackCheckInCompleted } from '@/lib/events';
 // Clinician summary. Read by Dr Judy when a user has paid to consult with her.
 //
 // This is the clinician half of decision 4.5: derived values appear HERE and
@@ -159,10 +160,10 @@ const ClinicianSummary = () => {
         const { data: ph } = ids.length
           ? await supabase.from('checkin_photos').select('*').in('checkin_id', ids).order('created_at', { ascending: true })
           : { data: [] as Photo[] };
-
-        setProfile(prof || null);
+              setProfile(prof || null);
         setCheckins((ci || []) as CheckIn[]);
         setPhotos((ph || []) as Photo[]);
+        trackReportViewed('clinician');
       } catch (e: any) {
         console.error('[ClinicianSummary] load failed:', e);
         setError(e?.message || 'Could not load this record.');

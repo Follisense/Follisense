@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { supabase } from '@/lib/supabaseClient';
 import { useApp } from '@/contexts/AppContext';
 import AuthShell, { T, fraunces, instrument } from '@/components/AuthShell';
-
+import { identifyOnLogin } from '@/lib/events';
 const OTP_LENGTH = 8; // must match Supabase → Auth → Email → OTP length
 
 const OTPVerificationPage = () => {
@@ -84,15 +84,21 @@ const OTPVerificationPage = () => {
         // Fallback: if the user already has a valid session from signInWithPassword,
         // the OTP step may not be strictly required,check session
         const { data: sessionData } = await supabase.auth.getSession();
-        if (sessionData?.session?.user) {
+              if (sessionData?.session?.user) {
           // Session exists,OTP was supplementary, proceed
           console.warn('[OTP] Verify failed but session exists, proceeding:', otpError.message);
+          identifyOnLogin(sessionData.session.user.id);
           setSuccess(true);
           setTimeout(() => navigate(redirectTo || '/home', { replace: true }), 600);
           return;
         }
         throw otpError;
       }
+
+         // Email signup and email login both land here, and this is the first
+      // point at which a real session exists, so identify happens here rather
+      // than in SignUpPage.
+      if (data?.user) identifyOnLogin(data.user.id);
 
       setSuccess(true);
       setTimeout(() => navigate(redirectTo || '/home', { replace: true }), 600);
