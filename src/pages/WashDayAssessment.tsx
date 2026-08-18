@@ -469,9 +469,9 @@ const WashDayAssessment = () => {
       // scores only lived inside the symptoms jsonb, never in the columns,
       // so every score column sat at its default of 0)
       const numeric = buildNumericPayload(answers);
-      // CCCA cluster,scored + flagged separately, NOT folded into total_score.
+            // Scored and flagged separately, NOT folded into total_score.
       // Returns 0/0/none for men (keys absent), keeping the jsonb shape uniform.
-      const ccca = buildCCCAPayload(answers);
+            const pattern = buildPatternPayload(answers);
       const symptomsPayload = {
         // Text answers
         itch:              answers.itch           ?? null,
@@ -498,16 +498,16 @@ const WashDayAssessment = () => {
         total_score:            scores.total,
         // risk_level respects the severe-symptom amber floor
         risk_level:             numeric.risk_level,
-        // CCCA fields (center_part_widening_score, crown_thinning_score, ccca_flag)
-        ...ccca,
+                // part_width_change_score, crown_density_change_score, pattern_flag
+                ...pattern,
       };
 
-      // Top-level columns: numeric scores + the two CCCA score columns.
-      // NOTE: ccca_flag stays jsonb-only,there's no ccca_flag column.
+           // Top-level columns: numeric scores plus the two pattern score columns.
+      // NOTE: pattern_flag stays jsonb-only, there is no column for it.
       const columnPayload = {
         ...numeric,
-        center_part_widening_score: ccca.center_part_widening_score,
-        crown_thinning_score:       ccca.crown_thinning_score,
+             part_width_change_score:    pattern.part_width_change_score,
+        crown_density_change_score: pattern.crown_density_change_score,
       };
 
       if (checkinId) {
