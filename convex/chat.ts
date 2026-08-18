@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------
-// P1-7 — this file is intentionally empty.
+// P1-7
 //
 // Chat is live-session only. The mutations that used to live here
 // (createSession, saveSessionTitle, addUserMessage,
