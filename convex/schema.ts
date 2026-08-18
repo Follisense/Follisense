@@ -1,7 +1,15 @@
 import { defineSchema } from "convex/server";
 
-// Chat is live-session only — no message content, session titles,
-// or user identity is persisted here. All health data lives in
-// Supabase (P1-7). Do not add tables to this file without a
-// data-protection review.
+// ---------------------------------------------------------------
+// P1-7 — one health-data store.
+//
+// Convex holds NO tables. Chat is live-session only: message
+// content, session titles and user identity are not persisted
+// here. All user data lives in Supabase, where the delete-account
+// path can reach it.
+//
+// Do not add a table to this file without a data-protection
+// review. If it needs storing, it goes in Supabase.
+// ---------------------------------------------------------------
+
 export default defineSchema({});
