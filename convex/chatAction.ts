@@ -3,7 +3,16 @@
 import OpenAI from "openai";
 import { v } from "convex/values";
 import { action } from "./_generated/server";
-import { api } from "./_generated/api";
+
+// ---------------------------------------------------------------
+// P1-7: Chat is LIVE-SESSION ONLY. No message content is persisted
+// to Convex. The conversation is held in React state on the client
+// and passed in on each turn for context. When the session ends it
+// is gone.
+//
+// Do not reintroduce ctx.runMutation calls that write message
+// content — the tables they wrote to no longer exist.
+// ---------------------------------------------------------------
 
 const BASE_PROMPT = `You are Folli, the official AI hair and scalp care assistant for FolliSense Smart Scalp Care. You specialise in textured hair and protective styles.
 
@@ -90,7 +99,9 @@ function buildSystemPrompt(
 
 export const sendMessage = action({
   args: {
-    sessionId: v.id("chatSessions"),
+    // Client-generated session id, used only for correlating a live
+    // session. NOT a database id — nothing is stored against it.
+    sessionId: v.optional(v.string()),
     messages: v.array(
       v.object({
         role: v.union(v.literal("user"), v.literal("assistant"), v.literal("system")),
@@ -107,14 +118,8 @@ export const sendMessage = action({
   handler: async (ctx, args) => {
     const llmMessages = [...args.messages];
 
-    // === Persist the user's message so history actually exists ===
-    const lastUser = [...args.messages].reverse().find(m => m.role === "user");
-    if (lastUser) {
-      await ctx.runMutation(api.chat.addUserMessage, {
-        sessionId: args.sessionId,
-        content: lastUser.content,
-      });
-    }
+    // NOTE: the user's message is deliberately NOT persisted here.
+    // See P1-7. The client holds the conversation in state.
 
     // === Convert image if uploaded ===
     if (args.fileStorageId) {
@@ -169,10 +174,7 @@ Please ask me questions to understand what you see and then help me.`,
         response.choices[0]?.message?.content ??
         "Sorry, I couldn't respond right now. Try again!";
 
-      await ctx.runMutation(api.chat.addAssistantMessage, {
-        sessionId: args.sessionId,
-        content: assistantContent,
-      });
+      // NOTE: the assistant reply is deliberately NOT persisted. See P1-7.
 
       return assistantContent;
     } catch (error) {
