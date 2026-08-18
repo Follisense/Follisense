@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, X } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
-import { scoreSymptoms, buildNumericPayload, buildCCCAPayload } from '@/utils/symptomScoring';
+import { scoreSymptoms, buildNumericPayload, buildPatternPayload } from '@/utils/symptomScoring';
 import { supabase } from '@/lib/supabaseClient';
 
 const dm       = "'DM Sans', sans-serif";
@@ -35,13 +35,13 @@ const baseQuestions: QuestionDef[] = [
   { key: 'hairConcern', q: 'Any unusual breakage or dryness since your last check-in?', qMale: 'Any unusual shedding, thinning, or dryness since your last check-in?',    options: ['No, hair feels normal', 'A little more than usual', 'Yes, noticeably more', "Yes, I'm concerned"] },
 ];
 
-// ─── CCCA cluster (women + prefer-not-to-say only) ───────────────────────────
-// Early signature of CCCA, a scarring (permanent) alopecia. Scored separately,
-// kept out of the composite total_score. Appended to baseQuestions below.
-const cccaQuestions: QuestionDef[] = [
-  { key: 'centerPartWidening', q: 'How does your part line look compared to before?',
+// ─── Part width and crown density (women + prefer-not-to-say only) ───────────
+// Scored separately, kept out of the composite total_score, and surfaced only
+// in the clinician summary. Appended to baseQuestions below.
+const patternQuestions: QuestionDef[] = [
+  { key: 'part_width_change', q: 'How does your part line look compared to before?',
     options: ['No change', 'Slightly wider', 'Noticeably wider', 'Much wider'] },
-  { key: 'crownThinning', q: 'How does the crown (top-centre) of your scalp look?',
+    { key: 'crown_density_change', q: 'How does the crown (top-centre) of your scalp look?',
     options: ['No change', 'Slightly thinner', 'Noticeably thinner', 'See-through at the crown'] },
 ];
 
@@ -62,8 +62,8 @@ const MidCycleCheckIn = () => {
   const [isSaving, setIsSaving]             = useState(false);
 
   const isMale       = onboardingData.gender === 'man';
-  // CCCA questions for women + prefer-not-to-say; men keep the base set.
-  const questions    = isMale ? baseQuestions : [...baseQuestions, ...cccaQuestions];
+  // These questions go to women + prefer-not-to-say; men keep the base set.
+  const questions    = isMale ? baseQuestions : [...baseQuestions, ...patternQuestions];
   const currentStyle = onboardingData.protectiveStyles[0] || (isMale ? 'your style' : 'Braids');
 
   const getContextLabel = () => {
@@ -125,8 +125,8 @@ const MidCycleCheckIn = () => {
       // scores only lived inside the symptoms jsonb, never in the columns,
       // so every score column sat at its default of 0)
       const numeric = buildNumericPayload(answers);
-      // CCCA cluster,scored + flagged separately, NOT folded into total_score.
-      const ccca = buildCCCAPayload(answers);
+            // Scored and flagged separately, NOT folded into total_score.
+      const pattern = buildPatternPayload(answers);
       const symptomsPayload = {
         // Text answers (human readable)
         itch:        answers.itch        ?? null,
@@ -142,18 +142,17 @@ const MidCycleCheckIn = () => {
         total_score:      scores.total,
         // risk_level respects the severe-symptom amber floor
         risk_level:       numeric.risk_level,
-        // CCCA fields (center_part_widening_score, crown_thinning_score, ccca_flag)
-        ...ccca,
+                // part_width_change_score, crown_density_change_score, pattern_flag
+        ...pattern,
       };
 
-      // Top-level columns: numeric scores + the two CCCA score columns.
-      // NOTE: ccca_flag stays jsonb-only,there's no ccca_flag column.
+      // Top-level columns: numeric scores plus the two pattern score columns.
+      // NOTE: pattern_flag stays jsonb-only, there is no column for it.
       const columnPayload = {
         ...numeric,
-        center_part_widening_score: ccca.center_part_widening_score,
-        crown_thinning_score:       ccca.crown_thinning_score,
+        part_width_change_score:    pattern.part_width_change_score,
+        crown_density_change_score: pattern.crown_density_change_score,
       };
-
       if (checkinId) {
         const { error } = await supabase
           .from('checkins')

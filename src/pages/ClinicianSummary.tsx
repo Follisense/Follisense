@@ -45,7 +45,8 @@ const C = {
 };
 
 const isMetaKey = (k: string) =>
-  k.endsWith('_score') || k === 'total_score' || k === 'risk_level' || k === 'ccca_flag';
+    k.endsWith('_score') || k === 'total_score' || k === 'risk_level' ||
+  k === 'pattern_flag' || k === 'ccca_flag';
 
 const NOT_REPORTED = new Set([
   'None', 'No', 'No change', 'Normal',
@@ -58,6 +59,8 @@ const SYMPTOM_LABELS: Record<string, string> = {
   flaking: 'Flaking', shedding: 'Shedding', irritation: 'Irritation',
   hairFeel: 'Hair feel', hairBreakage: 'Breakage', hairAppearance: 'Appearance',
   hairConcern: 'Hair concern', bumps: 'Bumps', dryness: 'Dryness',
+    part_width_change: 'Part width change', crown_density_change: 'Crown density change',
+  // Old keys, for check-ins written before the rename
   centerPartWidening: 'Part width change', crownThinning: 'Crown density change',
 };
 
@@ -177,7 +180,9 @@ const ClinicianSummary = () => {
   const frequency = (() => {
     const counts: Record<string, number> = {};
     symptomCheckins.forEach(c => reportedSymptoms(c.symptoms).forEach(k => {
-      if (k === 'centerPartWidening' || k === 'crownThinning') return; // shown separately
+            // Shown separately, under both old and new key names
+      if (k === 'part_width_change' || k === 'crown_density_change' ||
+          k === 'centerPartWidening' || k === 'crownThinning') return;
       counts[k] = (counts[k] || 0) + 1;
     }));
     return Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([key, count]) => ({ key, count }));
@@ -204,11 +209,24 @@ const ClinicianSummary = () => {
   // The two scarring-pattern questions. Only rendered when the patient was
   // actually asked: men skip them, and older check-ins predate them. Showing
   // "0 of 3, not answered" read as a measurement of zero, which it is not.
-  const partAnswer  = typeof latest?.symptoms?.centerPartWidening === 'string' ? latest.symptoms.centerPartWidening : null;
-  const crownAnswer = typeof latest?.symptoms?.crownThinning === 'string' ? latest.symptoms.crownThinning : null;
+  // Reads the new key, falling back to the old one for check-ins written before
+  // the P1-5 rename. Existing rows still hold centerPartWidening / crownThinning.
+  const readPattern = (s: Record<string, any> | null | undefined, newKey: string, oldKey: string): string | null => {
+    const v = s?.[newKey] ?? s?.[oldKey];
+    return typeof v === 'string' && v.length ? v : null;
+  };
 
-  const partWidthReported = symptomCheckins.filter(c => c.symptoms?.centerPartWidening && !NOT_REPORTED.has(c.symptoms.centerPartWidening)).length;
-  const crownReported     = symptomCheckins.filter(c => c.symptoms?.crownThinning && !NOT_REPORTED.has(c.symptoms.crownThinning)).length;
+  const partAnswer  = readPattern(latest?.symptoms, 'part_width_change',    'centerPartWidening');
+  const crownAnswer = readPattern(latest?.symptoms, 'crown_density_change', 'crownThinning');
+
+  const partWidthReported = symptomCheckins.filter(c => {
+    const v = readPattern(c.symptoms, 'part_width_change', 'centerPartWidening');
+    return v && !NOT_REPORTED.has(v);
+  }).length;
+  const crownReported = symptomCheckins.filter(c => {
+    const v = readPattern(c.symptoms, 'crown_density_change', 'crownThinning');
+    return v && !NOT_REPORTED.has(v);
+  }).length;
   const showFlag          = partWidthReported > 0 || crownReported > 0;
 
   const matchedPair = (() => {
@@ -314,13 +332,13 @@ const ClinicianSummary = () => {
               <DerivedBlock title="Composite symptom total" value={composite.value} max={composite.max} derivation={composite.derivation} />
               {partAnswer && (
                 <DerivedBlock
-                  title="Part width change" value={scoreSymptom('centerPartWidening', partAnswer)} max={3}
+                  title="Part width change" value={scoreSymptom('part_width_change', partAnswer)} max={3}
                   derivation={`Patient answer: "${partAnswer}". Scored separately and deliberately excluded from the composite total above.`}
                 />
               )}
               {crownAnswer && (
                 <DerivedBlock
-                  title="Crown density change" value={scoreSymptom('crownThinning', crownAnswer)} max={3}
+                                  title="Crown density change" value={scoreSymptom('crown_density_change', crownAnswer)} max={3}
                   derivation={`Patient answer: "${crownAnswer}". Scored separately and deliberately excluded from the composite total above.`}
                 />
               )}

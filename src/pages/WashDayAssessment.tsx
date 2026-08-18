@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, X, Camera } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
-import { scoreSymptoms, buildNumericPayload, buildCCCAPayload } from '@/utils/symptomScoring';
+import { scoreSymptoms, buildNumericPayload, buildPatternPayload } from '@/utils/symptomScoring';
 import { supabase } from '@/lib/supabaseClient';
 import ProductSearch from '@/components/ProductSearch';
 
@@ -162,15 +162,13 @@ const scalpSteps: StepDef[] = [
   },
 ];
 
-// ─── CCCA cluster steps (shown to women + prefer-not-to-say only) ─────────────
-// Center part widening + crown thinning are the early signature of CCCA, a
-// scarring (permanent) alopecia disproportionately affecting Black women.
-// Captured here as ordinary scalp-section steps; scored separately, kept out of
-// the composite total_score. Gated out for men (no part line; crown is already
-// covered by the hairline/Norwood path).
-const cccaStepDefs: StepDef[] = [
+// ─── Part width and crown density (shown to women + prefer-not-to-say only) ──
+// Captured as ordinary scalp-section steps; scored separately, kept out of the
+// composite total_score, and surfaced only in the clinician summary. Gated out
+// for men (no part line; crown is covered by the hairline path).
+const patternStepDefs: StepDef[] = [
   {
-    key: 'centerPartWidening',
+    key: 'part_width_change',
     q: 'How does your part line look compared to before?',
     qRegular: 'How does your part line look compared to a few months ago?',
     options: [
@@ -181,7 +179,7 @@ const cccaStepDefs: StepDef[] = [
     ],
   },
   {
-    key: 'crownThinning',
+        key: 'crown_density_change',
     q: 'How does the crown (top-centre) of your scalp look?',
     qRegular: 'How does the crown look compared to a few months ago?',
     options: [
@@ -356,10 +354,10 @@ const WashDayAssessment = () => {
   const [isSaving, setIsSaving] = useState(false);
 
   const isMale = onboardingData.gender === 'man';
-  // CCCA questions go to women + prefer-not-to-say; empty for men keeps the
-  // jsonb shape uniform (buildCCCAPayload returns 0/0/none when keys are absent).
-  const cccaSteps: StepDef[] = isMale ? [] : cccaStepDefs;
-  const scalpSection = [...scalpSteps, ...cccaSteps];
+   // These go to women + prefer-not-to-say; empty for men keeps the jsonb shape
+  // uniform (buildPatternPayload returns 0/0/none when the keys are absent).
+  const patternSteps: StepDef[] = isMale ? [] : patternStepDefs;
+  const scalpSection = [...scalpSteps, ...patternSteps];
   const allSteps = [...scalpSection, ...hairHealthSteps, productStep];
   const photoAreas = isMale ? photoAreasMale : photoAreasFemale;
   const currentStyle = onboardingData.protectiveStyles[0] || (isMale ? 'your style' : 'Braids');

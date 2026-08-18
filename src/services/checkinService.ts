@@ -55,9 +55,9 @@ export async function updateCheckinSession(
       // buildNumericPayload's fixed ten — score them directly.
       bumps_score:   scoreSymptom('bumps',   answers.bumps),
       dryness_score: scoreSymptom('dryness', answers.dryness),
-      // CCCA cluster — columns exist for the two scores
-      center_part_widening_score: scoreSymptom('centerPartWidening', answers.centerPartWidening),
-      crown_thinning_score:       scoreSymptom('crownThinning',      answers.crownThinning),
+            // Scored separately from the composite; columns exist for both
+      part_width_change_score:    scoreSymptom('part_width_change',    answers.part_width_change),
+      crown_density_change_score: scoreSymptom('crown_density_change', answers.crown_density_change),
     };
 
     console.log('[checkin] scored:', numeric.total_score, '→', numeric.risk_level);

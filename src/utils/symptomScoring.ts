@@ -107,11 +107,21 @@ export const SYMPTOM_SCORE_MAP: Record<string, Record<string, number>> = {
   breakage: {
     'None': 0, 'Mild': 1, 'Moderate': 2, 'Severe': 3,
   },
-  // CCCA cluster
+    // Part width and crown density. Scored separately from the composite and
+  // surfaced only in the clinician summary.
+  // Old camelCase keys kept alongside the new ones so check-ins already in the
+  // database still score. Remove once no rows use them.
   centerPartWidening: {
     'No change': 0, 'Slightly wider': 1, 'Noticeably wider': 2, 'Much wider': 3,
   },
   crownThinning: {
+    'No change': 0, 'Slightly thinner': 1, 'Noticeably thinner': 2, 'See-through at the crown': 3,
+  },
+  part_width_change: {
+  
+    'No change': 0, 'Slightly wider': 1, 'Noticeably wider': 2, 'Much wider': 3,
+  },
+   crown_density_change: {
     'No change': 0, 'Slightly thinner': 1, 'Noticeably thinner': 2, 'See-through at the crown': 3,
   },
 };
@@ -216,55 +226,58 @@ export const scoreLabel = (n: number): string => {
   return '3 — Severe';
 };
 
-// ─── CCCA cluster (kept OUT of total_score) ──────────────────────────────────
-// Center part widening + crown thinning are the early signature of CCCA, a
-// scarring (permanent) alopecia. They feed a dedicated same-session pattern
-// rule, NOT the composite total — so they can't inflate the general score, and
-// the CCCA flag stays a clean, auditable signal for the clinician summary.
+// ─── Part width and crown density (kept OUT of total_score) ──────────────────
+// These two answers are scored and stored separately from the composite so they
+// cannot inflate the general score, and so they stay a clean, auditable signal
+// for the clinician summary. They are never surfaced to the user.
 //
 // scoreSymptoms() above is untouched: it only reads its fixed key set, so these
 // two answers ride along in `answers` without ever affecting `total`.
 
-export interface CCCAScores {
-  centerPartWidening: number; // 0–3
-  crownThinning:      number; // 0–3
+export interface PatternScores {
+  partWidthChange:    number; // 0–3
+  crownDensityChange: number; // 0–3
 }
 
-export type CCCAFlag = 'none' | 'watch' | 'red';
+export type PatternFlag = 'none' | 'watch' | 'red';
 
-export const scoreCCCA = (answers: Record<string, string>): CCCAScores => ({
-  centerPartWidening: scoreSymptom('centerPartWidening', answers.centerPartWidening),
-  crownThinning:      scoreSymptom('crownThinning',      answers.crownThinning),
+// Reads the new key, falling back to the old one for rows written before the
+// rename.
+const readPattern = (answers: Record<string, string>, newKey: string, oldKey: string) =>
+  scoreSymptom(newKey, answers[newKey] ?? answers[oldKey]);
+
+export const scorePattern = (answers: Record<string, string>): PatternScores => ({
+  partWidthChange:    readPattern(answers, 'part_width_change',    'centerPartWidening'),
+  crownDensityChange: readPattern(answers, 'crown_density_change', 'crownThinning'),
 });
 
 // ⚠ PROVISIONAL THRESHOLD — pending clinical sign-off before the RED branch is
-// allowed to escalate a user. Scoring/storing is safe to ship now; the RED
+// allowed to escalate a user. Scoring and storing is safe to ship now; the RED
 // override that surfaces "see a dermatologist" is gated separately (see the
-// check-in handlers). CCCA scars permanently, so the costly error is a false
-// negative — but over-firing erodes trust. This grid is the thing to confirm:
+// check-in handlers). The costly error is a false negative, but over-firing
+// erodes trust. This grid is the thing to confirm:
 //
 //   crown ↓ / part →   No change   Slightly   Noticeably   Much
 //   No change          none        none       watch        watch
 //   Slightly           none        watch      watch        watch
 //   Noticeably         watch       watch      RED          RED
 //   See-through        watch       watch      RED          RED
-export const evaluateCCCA = (s: CCCAScores): CCCAFlag => {
-  const part = s.centerPartWidening;
-  const crown = s.crownThinning;
-  if (part >= 2 && crown >= 2) return 'red';                       // both moderate+ together
+export const evaluatePattern = (s: PatternScores): PatternFlag => {
+  const part  = s.partWidthChange;
+  const crown = s.crownDensityChange;
+  if (part >= 2 && crown >= 2) return 'red';
   if ((part >= 1 && crown >= 1) || part >= 2 || crown >= 2) return 'watch';
   return 'none';
 };
 
 // Numeric + flag payload to spread into the symptoms jsonb on each check-in.
-// For users not asked the CCCA questions (e.g. men), answers lack these keys,
-// so this returns 0 / 0 / 'none' — harmless, and keeps the jsonb shape uniform
-// for the admin dashboard.
-export const buildCCCAPayload = (answers: Record<string, string>) => {
-  const scores = scoreCCCA(answers);
+// For users not asked these questions (e.g. men), answers lack the keys, so
+// this returns 0 / 0 / 'none' — harmless, and keeps the jsonb shape uniform.
+export const buildPatternPayload = (answers: Record<string, string>) => {
+  const scores = scorePattern(answers);
   return {
-    center_part_widening_score: scores.centerPartWidening,
-    crown_thinning_score:       scores.crownThinning,
-    ccca_flag:                  evaluateCCCA(scores),
+    part_width_change_score:    scores.partWidthChange,
+    crown_density_change_score: scores.crownDensityChange,
+    pattern_flag:               evaluatePattern(scores),
   };
 };
