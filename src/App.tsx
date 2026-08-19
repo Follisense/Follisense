@@ -57,7 +57,7 @@ import ProductDetailPage from './pages/ProductDetailPage';
 import WishlistPage from './pages/WishlistPage';
 import { initAnalytics, grantAnalyticsConsent, trackPageview } from './lib/analytics'
 import CookieConsent from '@/components/CookieConsent';
-
+import ConsentStep from "@/components/ConsentStep";
 const queryClient = new QueryClient();
 
 // ─── Session guard,restores user on refresh ─────────────────────────────────
@@ -226,6 +226,7 @@ const App = () => {
                   <Route path="/clinician/:userId" element={<ClinicianSummary />} />
                   {/* Catch-all stays last. */}
                   <Route path="*" element={<NotFound />} />
+                  <Route path="/consent" element={<ConsentStep mode="signup" />} />
                 </Routes>
               </Layout>
             </SessionGuard>

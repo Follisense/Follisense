@@ -49,8 +49,10 @@ export const uploadPhoto = async (
 
     if (error) { console.error('Storage upload error:', error); return null; }
 
-    const { data } = supabase.storage.from(BUCKET).getPublicUrl(filename);
-    return data?.publicUrl || null;
+        // The bucket is private, so getPublicUrl returns a /object/public/ URL that
+    // Supabase answers with 400. Store the object path instead and sign it at
+    // render time via photoUrlService. This is why photos have never displayed.
+        return filename;
 
   } catch (err) {
     console.error('uploadPhoto error:', err);

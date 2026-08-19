@@ -7,6 +7,7 @@ import {
 import { supabase } from '@/lib/supabaseClient';
 import { useApp } from '@/contexts/AppContext';
 import { analyseImage } from '@/lib/visionClient';
+import { signPhotoUrls } from '@/services/photoUrlService';
 
 const dm       = "'DM Sans', sans-serif";
 const playfair = "'Playfair Display', serif";
@@ -317,8 +318,9 @@ const PhotoUploadSheet = ({ onClose, onPhotoSaved, attachLabel }: {
 //    counts in the denominator,that is what makes "4 of 6" honest.
 // 4. Photo-only entries (symptoms: {}) carry no symptom data and are excluded
 //    from the denominator entirely.
-
-const isMetaKey = (k: string) => k.endsWith('_score') || k === 'total_score' || k === 'risk_level';
+const isMetaKey = (k: string) =>
+  k.endsWith('_score') || k === 'total_score' || k === 'risk_level' ||
+  k === 'pattern_flag' || k === 'ccca_flag';
 
 // Every answer that means "nothing to report", taken from the 0-value entries
 // in symptomScoring.ts. The old getTopSymptoms only knew about three of these,
@@ -544,8 +546,15 @@ const HistoryPage = () => {
       const checkinIds = checkinsData.map(c => c.id);
       const { data: photosData } = await supabase
         .from('checkin_photos').select('*').in('checkin_id', checkinIds).order('created_at', { ascending: true });
+      // The bucket is private, so stored values must be signed before they can
+      // render. One request covers every photo on the page.
+      const signed = await signPhotoUrls((photosData || []).map(p => p.photo_url));
+
       const photosMap: Record<string, CheckInPhoto[]> = {};
-      (photosData || []).forEach(p => { if (!photosMap[p.checkin_id]) photosMap[p.checkin_id] = []; photosMap[p.checkin_id].push(p); });
+      (photosData || []).forEach(p => {
+        if (!photosMap[p.checkin_id]) photosMap[p.checkin_id] = [];
+        photosMap[p.checkin_id].push({ ...p, photo_url: signed[p.photo_url] ?? p.photo_url });
+      });
       setCheckins(checkinsData.map(c => ({ ...c, photos: photosMap[c.id] || [] })));
     } catch (err: any) {
       setError(err?.message || 'Could not load your history.');
@@ -574,9 +583,9 @@ const HistoryPage = () => {
         .upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: false });
       if (upErr) throw upErr;
 
-      const { data: pub } = supabase.storage.from(UPLOAD_BUCKET).getPublicUrl(path);
-      const photoUrl = pub?.publicUrl;
-      if (!photoUrl) throw new Error('No public URL returned');
+      // Store the object path; signed at render time. getPublicUrl is
+      // meaningless on a private bucket.
+      const photoUrl = path;
 
       let checkinId = target?.checkinId;
 

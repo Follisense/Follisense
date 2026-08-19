@@ -13,7 +13,7 @@ import { toast } from '@/hooks/use-toast';
 import { Switch } from '@/components/ui/switch';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { NotificationSettings } from '@/components/NotificationPrompt';
-
+import ConsentStep from '@/components/ConsentStep';
 const dm       = "'DM Sans', sans-serif";
 const playfair = "'Playfair Display', serif";
 
@@ -385,7 +385,14 @@ const ProfilePage = () => {
             </div>
 
             <SectionLabel>Data & Research</SectionLabel>
-            <div style={{ padding: '0 18px 14px' }}>
+            <div style={{ padding: '0 18px 18px' }}>
+              <ConsentStep mode="settings" />
+            </div>
+
+            {/* Superseded by ConsentStep above — the research toggle now writes
+                to the consents table with its wording recorded. Delete this
+                block once you have confirmed the new one works. */}
+            <div style={{ display: 'none', padding: '0 18px 14px' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
                 <p style={{ fontFamily: dm, fontSize: 12, fontWeight: 600, color: C.ink, flex: 1, margin: 0 }}>
                   Contribute my anonymised data to scalp health research

@@ -234,14 +234,17 @@ const KnowIt = () => {
         <div style={{ height: 16 }} />
 
         {/* Lifted white card */}
-        <div style={{
-          background:    C.white,
-          borderRadius:  '28px 28px 0 0',
-          boxShadow:     '0 -6px 28px rgba(0,0,0,0.08)',
-           minHeight:    'auto',
-          padding:       '28px 24px 80px',
-          boxSizing:     'border-box',
-        }}>
+       <div style={{
+  background: C.white,
+  borderRadius: '28px 28px 0 0',
+  boxShadow: '0 -6px 28px rgba(0,0,0,0.08)',
+  minHeight: 'auto',
+  width: '100%',
+  maxWidth: 650,
+  margin: '0 auto',
+  padding: '28px 24px 80px',
+  boxSizing: 'border-box',
+}}>
 
           {/* Top bar */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>

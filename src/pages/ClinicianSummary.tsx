@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { scoreSymptom } from '@/utils/symptomScoring';
 import { trackReportViewed } from '@/lib/events';
 import { trackCheckInCompleted } from '@/lib/events';
+import { signPhotoUrls } from '@/services/photoUrlService';
 // Clinician summary. Read by Dr Judy when a user has paid to consult with her.
 //
 // This is the clinician half of decision 4.5: derived values appear HERE and
@@ -178,7 +179,12 @@ const ClinicianSummary = () => {
           : { data: [] as Photo[] };
               setProfile(prof || null);
         setCheckins((ci || []) as CheckIn[]);
-        setPhotos((ph || []) as Photo[]);
+                // Private bucket: sign before rendering, same as HistoryPage.
+        const signed = await signPhotoUrls((ph || []).map(p => p.photo_url));
+        setPhotos(((ph || []) as Photo[]).map(p => ({
+          ...p,
+          photo_url: signed[p.photo_url] ?? p.photo_url,
+        })));
         trackReportViewed('clinician');
       } catch (e: any) {
         console.error('[ClinicianSummary] load failed:', e);
