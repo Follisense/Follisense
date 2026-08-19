@@ -428,7 +428,7 @@ const CheckInSummary = () => {
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, ${C.red}, transparent)`, boxShadow: `0 0 12px ${C.red}` }} />
               <p style={{ fontFamily: dm, fontSize: 10, fontWeight: 700, color: C.red, letterSpacing: '0.13em', textTransform: 'uppercase', margin: '0 0 6px', textShadow: `0 0 12px ${C.red}` }}>⚠ Action recommended</p>
               <p style={{ fontFamily: dm, fontSize: 13, color: C.warm, lineHeight: 1.65, margin: 0 }}>
-                Persistent or worsening symptoms can indicate conditions like traction alopecia or scalp inflammation. These respond best to early treatment,seeing a professional now gives you the most options.
+                              What you have logged has kept up over several check-ins. That is worth showing to someone who can examine your scalp properly, and the earlier you do, the more options you tend to have.
               </p>
             </motion.div>
 

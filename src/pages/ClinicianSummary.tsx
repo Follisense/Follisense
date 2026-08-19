@@ -134,14 +134,30 @@ const ClinicianSummary = () => {
 
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState<string | null>(null);
+  const [denied, setDenied]     = useState(false);
   const [profile, setProfile]   = useState<any>(null);
   const [checkins, setCheckins] = useState<CheckIn[]>([]);
   const [photos, setPhotos]     = useState<Photo[]>([]);
 
   useEffect(() => {
     (async () => {
-      if (!userId) { setError('No patient specified.'); setLoading(false); return; }
+           if (!userId) { setError('No patient specified.'); setLoading(false); return; }
       try {
+        // Route gate. Defence in depth, NOT the security control — RLS is.
+        // Until owner-scoped policies land on checkins, checkin_photos and
+        // profiles, an unlisted URL is the only thing between a signed-in user
+        // and someone else's health record.
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) { setDenied(true); setLoading(false); return; }
+
+        const { data: me } = await supabase
+          .from('profiles').select('role').eq('id', session.user.id).maybeSingle();
+
+        const isClinician = me?.role === 'clinician' || me?.role === 'admin';
+        // Anyone can open their own record; only a clinician can open another's.
+        if (!isClinician && session.user.id !== userId) {
+          setDenied(true); setLoading(false); return;
+        }
         // consumer_profiles is empty in production and profiles carries only
         // id/role/first_name/gender/created_at/current_style_start_date, so
         // hair type, style, cycle length and chemical processing are not
@@ -251,6 +267,18 @@ const ClinicianSummary = () => {
   if (loading) return (
     <div style={{ minHeight: '100vh', background: '#F4F6F1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <p style={{ fontFamily: dm, fontSize: 13, color: C.muted }}>Loading record…</p>
+    </div>
+  );
+
+    if (denied) return (
+    <div style={{ minHeight: '100vh', background: '#F4F6F1', padding: '40px 20px', fontFamily: dm }}>
+      <div style={{ maxWidth: 660, margin: '0 auto', background: '#fff', border: `1px solid ${C.line}`, borderRadius: 4, padding: '40px 44px' }}>
+        <p style={{ fontFamily: playfair, fontSize: 19, color: C.ink, margin: '0 0 8px' }}>Not available</p>
+        <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.7, margin: 0 }}>
+          You do not have access to this record.
+        </p>
+        <button onClick={() => navigate('/home')} style={{ marginTop: 22, height: 42, padding: '0 20px', borderRadius: 12, border: `1px solid ${C.line}`, background: 'transparent', fontFamily: dm, fontSize: 13, color: C.ink, cursor: 'pointer' }}>Back to home</button>
+      </div>
     </div>
   );
 

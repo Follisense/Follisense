@@ -4,7 +4,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, X, ExternalLink, CheckCircle2, ChevronRight } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/lib/supabaseClient';
-
+// GUARD: quiz stems are illustrations only, never the user's own photo.
+//
+// Showing someone their own scalp beside "which of these is traction alopecia"
+// makes the app appear to answer that question about them. That is a diagnosis
+// however the copy is worded, and it is the line this product does not cross.
+//
+// If a future version wants personalised practice, the answer is a clinician
+// looking at the photo, not a quiz.
 // ─── CONDITION IMAGES ───
 import imgTraction     from '@/assets/conditions/tractionalopecia-knowit.png';
 import imgFphl         from '@/assets/conditions/hairthinning-knowit.png';
@@ -221,7 +228,8 @@ const KnowIt = () => {
         html, body, #root { background: ${C.bg} !important; margin: 0; padding: 0; }
       `}</style>
 
-      <div style={{ background: C.bg, minHeight: '100vh' }}>
+      <div className="fs-flow">
+  <div className="fs-form-shell"></div>
         {/* Peeking strip,same as MidCycle */}
         <div style={{ height: 16 }} />
 
@@ -230,7 +238,7 @@ const KnowIt = () => {
           background:    C.white,
           borderRadius:  '28px 28px 0 0',
           boxShadow:     '0 -6px 28px rgba(0,0,0,0.08)',
-          minHeight:     'calc(100vh - 16px)',
+           minHeight:    'auto',
           padding:       '28px 24px 80px',
           boxSizing:     'border-box',
         }}>
