@@ -432,13 +432,14 @@ const migrateBaselinePhotos = async (
         .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
       if (upErr) throw upErr;
 
-      const { data: pub } = supabase.storage.from(UPLOAD_BUCKET).getPublicUrl(path);
-      if (!pub?.publicUrl) throw new Error('no public URL for baseline photo');
+            // Private bucket: store the path, signed at render time.
+      const photoUrl = path;
+      
 
       const { error: phErr } = await supabase.from('checkin_photos').insert({
         checkin_id: checkinId,
         user_id: uid,
-        photo_url: pub.publicUrl,
+                photo_url: photoUrl,
         region_tag: p.area || 'general',
       });
       if (phErr) throw phErr;
