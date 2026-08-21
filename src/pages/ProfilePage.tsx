@@ -14,6 +14,7 @@ import { Switch } from '@/components/ui/switch';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { NotificationSettings } from '@/components/NotificationPrompt';
 import ConsentStep from '@/components/ConsentStep';
+import { FileText } from 'lucide-react';
 const dm       = "'DM Sans', sans-serif";
 const playfair = "'Playfair Display', serif";
 
@@ -383,7 +384,23 @@ const ProfilePage = () => {
             <div style={{ padding: '0 18px 18px' }}>
               <NotificationSettings />
             </div>
-
+            <SectionLabel>Your record</SectionLabel>
+            <div style={{ padding: '0 18px 18px' }}>
+              <button
+                onClick={() => navigate('/my-record')}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderRadius: 14, border: `1px solid ${C.mid}`, background: 'rgba(255,255,255,0.03)', cursor: 'pointer', textAlign: 'left' }}
+              >
+                <FileText size={16} color={C.goldSolid} strokeWidth={1.7} />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'block', fontFamily: dm, fontSize: 13, fontWeight: 600, color: C.ink }}>
+                    Your scalp and hair record
+                  </span>
+                  <span style={{ display: 'block', fontFamily: dm, fontSize: 11, color: C.muted, marginTop: 2 }}>
+                    Everything you've logged, ready to print or save
+                  </span>
+                </span>
+              </button>
+            </div>
             <SectionLabel>Data & Research</SectionLabel>
             <div style={{ padding: '0 18px 18px' }}>
               <ConsentStep mode="settings" />

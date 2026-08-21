@@ -16,7 +16,7 @@ import HomePage from "./pages/HomePage";
 import MidCycleCheckIn from "./pages/MidCycleCheckIn";
 import WashDayAssessment from "./pages/WashDayAssessment";
 import CheckInSummary from "./pages/CheckInSummary";
-import ClinicianSummary from "./pages/ClinicianSummary";
+import HealthRecord from "@/pages/HealthRecord";
 import HealthProfile from "./pages/HealthProfile";
 import HistoryPage from "./pages/HistoryPage";
 import LearnPage from "./pages/LearnPage";
@@ -192,7 +192,7 @@ const App = () => {
                   <Route path="/mid-cycle" element={<MidCycleCheckIn />} />
                   <Route path="/wash-day" element={<WashDayAssessment />} />
                   <Route path="/results" element={<CheckInSummary />} />
-                  <Route path="/clinician-summary" element={<ClinicianSummary />} />
+                  
                   <Route path="/health-profile" element={<HealthProfile />} />
                   <Route path="/research" element={<ResearchProgramme />} />
                   <Route path="/find-specialist" element={<FindSpecialist />} />
@@ -223,8 +223,8 @@ const App = () => {
                   <Route path="/product-guide" element={<ProductDirectory />} />
                   <Route path="/wishlist" element={<WishlistPage />} />
                   <Route path="/shop" element={<Navigate to="/products" replace />} />
-                  <Route path="/clinician/:userId" element={<ClinicianSummary />} />
-                  {/* Catch-all stays last. */}
+                  <Route path="/my-record" element={<HealthRecord mode="patient" />} />
+                  <Route path="/clinician/:userId" element={<HealthRecord mode="clinician" />} />
                   <Route path="*" element={<NotFound />} />
                   <Route path="/consent" element={<ConsentStep mode="signup" />} />
                 </Routes>
