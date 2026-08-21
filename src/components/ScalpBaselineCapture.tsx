@@ -4,14 +4,14 @@ import { Camera, ImageIcon, AlertCircle, Check, Sparkles } from 'lucide-react';
 import { saveBaselinePhotos } from '@/services/photoUploadService';
 import { analyseImage } from '@/lib/visionClient';
 
-import scalpFrontFemale from '@/assets/scalp-front-female.jpeg';
-import scalpSideFemale  from '@/assets/scalp-side-female.jpeg';
-import scalpBackFemale  from '@/assets/scalp-back-female.jpeg';
-import scalpTopFemale   from '@/assets/scalp-top-female.jpeg';
-import scalpFrontMale   from '@/assets/ref-male-front.jpg';
-import scalpSideMaleB   from '@/assets/scalp-side-male-b.jpeg';
-import scalpBackMale    from '@/assets/scalp-back-male.png';
-import scalpTopMale     from '@/assets/scalp-top-male.png';
+import scalpFrontFemale from '@/assets/scalp-front-female.webp';
+import scalpSideFemale  from '@/assets/scalp-side-female.webp';
+import scalpBackFemale  from '@/assets/scalp-back-female.webp';
+import scalpTopFemale   from '@/assets/scalp-top-female.webp';
+import scalpFrontMale   from '@/assets/ref-male-front.webp';
+import scalpSideMaleB   from '@/assets/scalp-side-male-b.webp';
+import scalpBackMale    from '@/assets/scalp-back-male.webp';
+import scalpTopMale     from '@/assets/scalp-top-male.webp';
 
 
 

@@ -16,12 +16,12 @@ import {
 import { scoreSymptom, scoreToRisk } from '@/utils/symptomScoring';
 import { syncOnboardingProfile } from '@/services/onboardingProfileService';
 import { trackOnboardingCompleted, trackBaselinePhotos, trackCheckInCompleted } from '@/lib/events';
-import scalpFrontFemale from '@/assets/scalp-front-female.jpeg';
-import scalpSideFemale from '@/assets/scalp-side-female.jpeg';
-import scalpBackFemale from '@/assets/scalp-back-female.jpeg';
-import refMaleFront from '@/assets/ref-male-front.jpg';
-import scalpSideMaleB from '@/assets/scalp-side-male-b.jpeg';
-import scalpBackMale from '@/assets/scalp-back-male.png';
+import scalpFrontFemale from '@/assets/scalp-front-female.webp';
+import scalpSideFemale from '@/assets/scalp-side-female.webp';
+import scalpBackFemale from '@/assets/scalp-back-female.webp';
+import refMaleFront from '@/assets/ref-male-front.webp';
+import scalpSideMaleB from '@/assets/scalp-side-male-b.webp';
+import scalpBackMale from '@/assets/scalp-back-male.webp';
 
 // ─── SHARED STYLE ─────────────────────────────────────────────────────────────
 // Forest green + Fraunces/Instrument Sans theme (matches mockups).
@@ -42,14 +42,14 @@ const S = {
 const HEAD = "'Fraunces', Georgia, 'Times New Roman', serif";
 const BODY = "'Instrument Sans', -apple-system, 'Segoe UI', sans-serif";
 
-import hair3A from '@/assets/hair_type_3A_v2.png';
-import hair3B from '@/assets/hair_type_3B.png';
-import hair3C from '@/assets/hair_type_3C.png';
-import hair4A from '@/assets/hair_type_4A.png';
-import hair4B from '@/assets/hair_type_4B.png';
-import hair4C from '@/assets/hair_type_4C.png';
-import hair1 from '@/assets/hair_type_1_v2.png';
-import hair2 from '@/assets/hair_type_2_v2.png';
+import hair3A from '@/assets/hair_type_3A_v2.webp';
+import hair3B from '@/assets/hair_type_3B.webp';
+import hair3C from '@/assets/hair_type_3C.webp';
+import hair4A from '@/assets/hair_type_4A.webp';
+import hair4B from '@/assets/hair_type_4B.webp';
+import hair4C from '@/assets/hair_type_4C.webp';
+import hair1 from '@/assets/hair_type_1_v2.webp';
+import hair2 from '@/assets/hair_type_2_v2.webp';
 
 // ─── OPTIONS ─────────────────────────────────────────────────────────────────
 const femaleStyleOptions = ['Braids', 'Locs', 'Twists', 'Twist out', 'Wig', 'Weave', 'Silk press', 'Blow out', 'Loose natural', 'Wash and go', 'Cornrows', 'Other'];
