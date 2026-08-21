@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Check } from 'lucide-react';
 
-import scalpImg1 from '@/assets/norwood_v2_stage_1.png';
-import scalpImg2 from '@/assets/norwood_v2_stage_2.png';
-import scalpImg3 from '@/assets/norwood_v2_stage_3.png';
-import scalpImg4 from '@/assets/norwood_v2_stage_4.png';
-import scalpImg5 from '@/assets/norwood_v2_stage_5.png';
-import scalpImg6 from '@/assets/norwood_v2_stage_6.png';
-import scalpImg7 from '@/assets/norwood_v2_stage_7.png';
+import scalpImg1 from '@/assets/norwood_v2_stage_1.webp';
+import scalpImg2 from '@/assets/norwood_v2_stage_2.webp';
+import scalpImg3 from '@/assets/norwood_v2_stage_3.webp';
+import scalpImg4 from '@/assets/norwood_v2_stage_4.webp';
+import scalpImg5 from '@/assets/norwood_v2_stage_5.webp';
+import scalpImg6 from '@/assets/norwood_v2_stage_6.webp';
+import scalpImg7 from '@/assets/norwood_v2_stage_7.webp';
 
 const sage   = '#7fa896';
 const sageB  = 'rgba(124,154,142,0.08)';

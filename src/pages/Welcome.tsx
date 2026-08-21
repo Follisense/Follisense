@@ -1,7 +1,7 @@
 // WelcomeScreen.tsx
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import wordmark from '@/assets/wordmark-green.png';
+import wordmark from '@/assets/wordmark-green.webp';
 
 const fraunces   = "'Fraunces', serif";
 const instrument = "'Instrument Sans', system-ui, sans-serif";

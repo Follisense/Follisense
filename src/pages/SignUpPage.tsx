@@ -6,7 +6,7 @@ import { useApp } from '@/contexts/AppContext';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from '@/hooks/use-toast';
 import { trackSignedUp } from '@/lib/events';
-import wordmark from '@/assets/wordmark-cream.png';
+import wordmark from '@/assets/wordmark-cream.webp';
 
 const mont = "'Montserrat', sans-serif";
 

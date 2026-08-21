@@ -2,7 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Home, Clock, BookOpen, User, Users } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import FloatingChat from '@/components/FloatingChat';
-import wordmark from '@/assets/wordmark-green.png';
+import wordmark from '@/assets/wordmark-green.webp';
 
 const consumerTabs = [
   { path: '/home',    icon: Home,     label: 'Home'    },

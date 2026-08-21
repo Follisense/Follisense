@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/supabaseClient';
 
-import splashImage from '@/assets/follisense_splash_v2.png';
+import splashImage from '@/assets/follisense_splash_v2.webp';
 
 // Brand green matched to the app, fades blend into green instead of brown
 const GREEN = '#12211A';

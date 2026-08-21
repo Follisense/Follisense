@@ -13,14 +13,14 @@ import { supabase } from '@/lib/supabaseClient';
 // If a future version wants personalised practice, the answer is a clinician
 // looking at the photo, not a quiz.
 // ─── CONDITION IMAGES ───
-import imgTraction     from '@/assets/conditions/tractionalopecia-knowit.png';
-import imgFphl         from '@/assets/conditions/hairthinning-knowit.png';
-import imgMphl         from '@/assets/conditions/mphl-knowit.png';
-import imgFfa          from '@/assets/conditions/fffa-knowit.png';
-import imgSebDerm      from '@/assets/conditions/seborrheicdermatitis-knowit.png';
-import imgFolliculitis from '@/assets/conditions/sorenessfrombraids-knowit.png';
-import imgChemical     from '@/assets/conditions/chemicalirritation-knowit.png';
-import imgTension      from '@/assets/conditions/sorenessfrombraids-knowit.png';
+import imgTraction     from '@/assets/conditions/tractionalopecia-knowit.webp';
+import imgFphl         from '@/assets/conditions/hairthinning-knowit.webp';
+import imgMphl         from '@/assets/conditions/mphl-knowit.webp';
+import imgFfa          from '@/assets/conditions/fffa-knowit.webp';
+import imgSebDerm      from '@/assets/conditions/seborrheicdermatitis-knowit.webp';
+import imgFolliculitis from '@/assets/conditions/sorenessfrombraids-knowit.webp';
+import imgChemical     from '@/assets/conditions/chemicalirritation-knowit.webp';
+import imgTension      from '@/assets/conditions/sorenessfrombraids-knowit.webp';
 
 const conditionImageMap: Record<string, string> = {
   'traction-alopecia':          imgTraction,

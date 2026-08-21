@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import wordmarkGreen from '@/assets/wordmark-green.png';
+import wordmarkGreen from '@/assets/wordmark-green.webp';
 
 export const fraunces   = "'Fraunces', serif";
 export const instrument = "'Instrument Sans', system-ui, sans-serif";

@@ -13,7 +13,7 @@ import { useMutation, useAction } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
 import { useSubscription } from '@/hooks/useSubscription';
-import wordmarkGreen from '@/assets/wordmark-green.png';
+import wordmarkGreen from '@/assets/wordmark-green.webp';
 
 const T = {
   bg: '#0E0D0B', surface: '#181614', card: '#1F1C19', border: '#2E2A24',
