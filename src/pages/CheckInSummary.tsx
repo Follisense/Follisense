@@ -5,7 +5,7 @@ import { useApp } from '@/contexts/AppContext';
 import { computeCheckInStatus, getTriageGuidance } from '@/utils/checkInRules';
 import { scoreSymptoms, scoreToRiskWithFlags } from '@/utils/symptomScoring';
 import type { HealthProfileData } from '@/contexts/AppContext';
-
+import HairEventPrompt from '@/components/HairEventPrompt';
 const dm       = "'DM Sans', sans-serif";
 const playfair = "'Playfair Display', serif";
 
@@ -338,6 +338,7 @@ const CheckInSummary = () => {
               </div>
             </Card>
 
+          <HairEventPrompt />
             <button onClick={() => navigate('/home')} style={{ width: '100%', height: 54, borderRadius: 18, border: 'none', background: `linear-gradient(135deg, #1A2018 0%, #0E1A0C 60%, #0A0908 100%)`, color: C.green, fontFamily: dm, fontSize: 14, fontWeight: 600, cursor: 'pointer', marginTop: 8, boxShadow: `0 4px 24px rgba(0,0,0,0.5), 0 0 20px ${C.green}18`, position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg, transparent, ${C.green}50, transparent)` }} />
               Back to dashboard
@@ -403,6 +404,7 @@ const CheckInSummary = () => {
               <button onClick={() => navigate('/mid-cycle')} style={{ width: '100%', height: 48, borderRadius: 16, border: `1.5px solid ${C.amber}40`, background: `${C.amber}10`, color: C.amber, fontFamily: dm, fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: `0 0 16px ${C.amber}18` }}>
                 Start an early check-in
               </button>
+              <HairEventPrompt />
               <button onClick={() => navigate('/home')} style={{ width: '100%', height: 54, borderRadius: 18, border: 'none', background: `linear-gradient(135deg, #1E1608 0%, #16120A 60%, #0A0908 100%)`, color: C.amber, fontFamily: dm, fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: `0 4px 24px rgba(0,0,0,0.5), 0 0 20px ${C.amber}18`, position: 'relative', overflow: 'hidden' }}>
                 <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg, transparent, ${C.amber}55, transparent)` }} />
                 Back to dashboard

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Fragment } from 'react';
+import { useState, useEffect, useRef, Fragment,useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Camera, TrendingUp, ImageIcon, ChevronRight, Layers,
@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { useApp } from '@/contexts/AppContext';
 import { analyseImage } from '@/lib/visionClient';
 import { signPhotoUrls } from '@/services/photoUrlService';
+import CaptureContext, { type CaptureContextValue } from '@/components/CaptureContext';
 
 const dm       = "'DM Sans', sans-serif";
 const playfair = "'Playfair Display', serif";
@@ -43,9 +44,18 @@ interface CheckIn {
   triage_reasoning: string | null; notes: string | null;
   is_baseline: boolean; created_at: string;
   photos?: CheckInPhoto[];
+  hair_state?: string | null;
+  hair_form?: string | null;
+  product_state?: string | null;
+  lighting?: string | null;
 }
 interface CheckInPhoto {
-  id: string; checkin_id: string; photo_url: string; region_tag: string; created_at: string;
+    id: string; checkin_id: string; photo_url: string; region_tag: string; created_at: string;
+  // P3-1 capture context. Optional: photos from before this existed have none.
+  hair_state?: string | null;
+  hair_form?: string | null;
+  product_state?: string | null;
+  lighting?: string | null;
 }
 
 // ─── PHOTO VALIDATION (Vision = gatekeeper only, no analysis) ────────────────
@@ -134,7 +144,7 @@ type UploadStep = 'choose' | 'validating' | 'invalid' | 'confirm' | 'error';
 
 const PhotoUploadSheet = ({ onClose, onPhotoSaved, attachLabel }: {
   onClose: () => void;
-  onPhotoSaved: (dataUrl: string) => void;
+  onPhotoSaved: (dataUrl: string, context?: CaptureContextValue) => void;
   attachLabel?: string | null;
 }) => {
   const [step, setStep]             = useState<UploadStep>('choose');
@@ -143,7 +153,10 @@ const PhotoUploadSheet = ({ onClose, onPhotoSaved, attachLabel }: {
   const [base64Data, setBase64Data] = useState<string | null>(null);
   const cameraRef                   = useRef<HTMLInputElement>(null);
   const galleryRef                  = useRef<HTMLInputElement>(null);
-
+  // P3-1. Holds the pending photo while she answers the context questions,
+  // and the last context used so the next photo is one tap.
+  const [pendingPhoto, setPendingPhoto]   = useState<string | null>(null);
+  const [lastContext, setLastContext]     = useState<CaptureContextValue | null>(null);
   const handleFile = async (file: File) => {
     const preview = URL.createObjectURL(file);
     setPreviewUrl(preview);
@@ -444,7 +457,8 @@ const PhotoCard = ({ checkin, onDeletePhoto }: {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const current = photos[Math.min(idx, Math.max(photos.length - 1, 0))];
   const photoOnly = isPhotoOnly(checkin);
-
+   const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
+  const [lastContext, setLastContext]   = useState<CaptureContextValue | null>(null);
   const handleDeleteTap = () => {
     if (!confirmDelete) { setConfirmDelete(true); setTimeout(() => setConfirmDelete(false), 2500); return; }
     setConfirmDelete(false);
@@ -530,10 +544,14 @@ const HistoryPage = () => {
   const [compareMode, setCompareMode] = useState(false);
   const [compareA, setCompareA]     = useState(0);
   const [compareB, setCompareB]     = useState(1);
+  const [compareGroup, setCompareGroup] = useState(0);
   const [showUploader, setShowUploader] = useState(false);
   // When set, the uploader attaches the photo to this existing check-in instead of creating a new one
-  const [attachTarget, setAttachTarget] = useState<{ checkinId: string; label: string } | null>(null);
-
+   const [attachTarget, setAttachTarget] = useState<{ checkinId: string; label: string } | null>(null);
+  // P3-1. Holds the pending photo while she answers the context questions, and
+  // the last context used so the next photo is one tap.
+  const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
+  const [lastContext, setLastContext]   = useState<CaptureContextValue | null>(null);
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -548,6 +566,15 @@ const HistoryPage = () => {
         .from('checkin_photos').select('*').in('checkin_id', checkinIds).order('created_at', { ascending: true });
       // The bucket is private, so stored values must be signed before they can
       // render. One request covers every photo on the page.
+            const { data: lastCtx } = await supabase
+        .from('checkin_photos')
+        .select('hair_state, hair_form, product_state')
+        .eq('user_id', session.user.id)
+        .not('hair_state', 'is', null) 
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (lastCtx) setLastContext(lastCtx as CaptureContextValue);
       const signed = await signPhotoUrls((photosData || []).map(p => p.photo_url));
 
       const photosMap: Record<string, CheckInPhoto[]> = {};
@@ -566,7 +593,11 @@ const HistoryPage = () => {
   // ── Save photo: upload to storage, then attach to existing check-in OR create a new progress entry ──
   // No local savedPhotos mirror any more,fetchData is the single source of truth,
   // so a photo can never appear twice or survive its own deletion.
-  const handlePhotoSaved = async (dataUrl: string) => {
+    // `context` is optional so the existing uploader can still call this while
+  // the capture-context step is being wired in. Null context means the photo
+  // is not eligible for matched comparison, which is honest rather than
+  // guessing at conditions we did not ask about.
+  const handlePhotoSaved = async (dataUrl: string, context?: CaptureContextValue) => {
     const target = attachTarget;
     setAttachTarget(null);
 
@@ -610,6 +641,9 @@ const HistoryPage = () => {
         user_id:    uid,
         photo_url:  photoUrl,
         region_tag: 'general',
+        // Null when she skipped or this predates P3-1. A photo without context
+        // is still a photo; it is just not eligible for comparison.
+        ...(context ?? {}),
       });
       if (phErr) throw phErr;
 
@@ -692,6 +726,42 @@ const HistoryPage = () => {
 
   const checkinsWithPhotos = checkins.filter(c => (c.photos?.length || 0) > 0);
 
+  // ── P3-3. Matched comparison ──
+  // A pair is comparable only when both photos are of the same region AND were
+  // taken in the same conditions. Anything else compares a wet head to a dry
+  // one and calls the difference progress.
+  //
+  // No fallback to any-two-photos. If there is no matched pair, the honest
+  // answer is that there is nothing to compare yet.
+  const matchedGroups = useMemo(() => {
+    const all = checkinsWithPhotos.flatMap(c =>
+      (c.photos || []).map(p => ({ ...p, takenAt: c.created_at })),
+    );
+
+    const groups: Record<string, typeof all> = {};
+    all.forEach(p => {
+      // Photos without context predate P3-1 and cannot be matched.
+      if (!p.hair_state || !p.hair_form || !p.product_state) return;
+      const key = `${p.region_tag}|${p.hair_state}|${p.hair_form}|${p.product_state}`;
+      (groups[key] ||= []).push(p);
+    });
+
+    return Object.entries(groups)
+      .filter(([, photos]) => photos.length >= 2)
+      .map(([key, photos]) => {
+        const [region, state, form, product] = key.split('|');
+        return {
+          key,
+          label: `${region} · ${state}, ${form}${product === 'none' ? '' : `, ${product} product`}`,
+          photos: [...photos].sort(
+            (a, b) => new Date(a.takenAt).getTime() - new Date(b.takenAt).getTime(),
+          ),
+        };
+      });
+  }, [checkinsWithPhotos]);
+
+  const activeGroup = matchedGroups[compareGroup] ?? null;
+  
   // Onboarding baseline photos only render from local context when they never
   // made it into checkin_photos,otherwise the same photo would show twice.
   const baselineInDb    = checkins.some(c => c.is_baseline && (c.photos?.length || 0) > 0);
@@ -760,8 +830,13 @@ const HistoryPage = () => {
                 <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 0', borderRadius: 10, fontFamily: dm, fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'all 0.2s', background: tab === t.id ? C.gold : 'transparent', color: tab === t.id ? '#101A14' : 'rgba(255,255,255,0.4)', boxShadow: tab === t.id ? `0 2px 10px rgba(110,158,130,0.4)` : 'none' }}>
                   <t.Icon size={13} /> {t.label}
                 </button>
-              ))}
+                
+                          ))}
             </div>
+             <button onClick={() => window.location.assign('/timeline')}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: dm, fontSize: 12, fontWeight: 600, padding: '8px 14px', borderRadius: 20, border: `1.5px solid ${C.mid}`, background: C.surface, color: C.muted, cursor: 'pointer', flexShrink: 0 }}>
+              Timeline
+            </button>
           </div>
 
           {/* Summary metrics,counts only, no average score */}
@@ -814,39 +889,70 @@ const HistoryPage = () => {
                         </button>
                       </div>
                     </div>
-
-                    {compareMode && checkinsWithPhotos.length >= 2 && (
+                        {compareMode && (
                       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                         style={{ ...cardStyle, padding: 16, marginBottom: 16, borderRadius: 20, background: '#101A14' }}>
-                        <p style={{ fontFamily: playfair, fontSize: 14, fontWeight: 500, color: C.ink, marginBottom: 12 }}>Side-by-side</p>
-                        <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-                          {[{ val: compareA, set: setCompareA, label: 'Earlier' }, { val: compareB, set: setCompareB, label: 'Later' }].map((s, idx) => (
-                            <div key={idx} style={{ flex: 1 }}>
-                              <p style={{ fontFamily: dm, fontSize: 10, color: C.muted, marginBottom: 4 }}>{s.label}</p>
-                              <select value={s.val} onChange={e => s.set(Number(e.target.value))} style={{ width: '100%', fontFamily: dm, fontSize: 12, padding: '7px 10px', borderRadius: 10, background: 'rgba(255,255,255,0.06)', color: '#F5EFE6', border: '1px solid rgba(255,255,255,0.1)', outline: 'none' }}>
-                                {checkinsWithPhotos.map((c, i) => <option key={i} value={i}>{formatDate(c.created_at)}</option>)}
+                        <p style={{ fontFamily: playfair, fontSize: 14, fontWeight: 500, color: C.ink, marginBottom: 4 }}>Side-by-side</p>
+                        <p style={{ fontFamily: dm, fontSize: 11, color: C.muted, marginBottom: 14, lineHeight: 1.6 }}>
+                          Only photos of the same area taken in the same conditions.
+                        </p>
+
+                        {matchedGroups.length === 0 ? (
+                          <div style={{ padding: '20px 4px' }}>
+                            <p style={{ fontFamily: dm, fontSize: 13, color: C.ink, marginBottom: 6 }}>
+                              Nothing to compare yet
+                            </p>
+                            <p style={{ fontFamily: dm, fontSize: 12, color: C.muted, lineHeight: 1.7, margin: 0 }}>
+                              You need two photos of the same area, taken with your hair
+                              in the same state. Comparing a wet photo to a dry one shows
+                              a change that isn't really there, so we don't do it.
+                            </p>
+                          </div>
+                        ) : (
+                          <>
+                            {matchedGroups.length > 1 && (
+                              <select
+                                value={compareGroup}
+                                onChange={e => { setCompareGroup(Number(e.target.value)); setCompareA(0); setCompareB(1); }}
+                                style={{ width: '100%', fontFamily: dm, fontSize: 12, padding: '7px 10px', borderRadius: 10, background: 'rgba(255,255,255,0.06)', color: '#F5EFE6', border: '1px solid rgba(255,255,255,0.1)', outline: 'none', marginBottom: 10 }}
+                              >
+                                {matchedGroups.map((g, i) => <option key={g.key} value={i}>{g.label}</option>)}
                               </select>
-                            </div>
-                          ))}
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                          {[compareA, compareB].map((idx, col) => {
-                            const entry = checkinsWithPhotos[idx];
-                            const photo = entry?.photos?.[0];
-                            return (
-                              <div key={col}>
-                                <div style={{ height: 200, borderRadius: 14, background: photo?.photo_url ? `url(${photo.photo_url}) center/cover` : `linear-gradient(160deg, ${C.gold10}, ${C.surface})`, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1.5px solid ${C.mid}` }}>
-                                  {!photo?.photo_url && <ImageIcon size={18} color={C.gold} opacity={0.5} />}
+                            )}
+
+                            <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+                              {[{ val: compareA, set: setCompareA, label: 'Earlier' }, { val: compareB, set: setCompareB, label: 'Later' }].map((s, idx) => (
+                                <div key={idx} style={{ flex: 1 }}>
+                                  <p style={{ fontFamily: dm, fontSize: 10, color: C.muted, marginBottom: 4 }}>{s.label}</p>
+                                  <select value={s.val} onChange={e => s.set(Number(e.target.value))} style={{ width: '100%', fontFamily: dm, fontSize: 12, padding: '7px 10px', borderRadius: 10, background: 'rgba(255,255,255,0.06)', color: '#F5EFE6', border: '1px solid rgba(255,255,255,0.1)', outline: 'none' }}>
+                                    {(activeGroup?.photos || []).map((p, i) => (
+                                      <option key={p.id} value={i}>{formatDate(p.takenAt)}</option>
+                                    ))}
+                                  </select>
                                 </div>
-                                <p style={{ fontFamily: dm, fontSize: 10, color: C.muted, marginTop: 6, textAlign: 'center' }}>{entry ? formatDate(entry.created_at) : ''}</p>
-                              </div>
-                            );
-                          })}
-                        </div>
+                              ))}
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                              {[compareA, compareB].map((idx, col) => {
+                                const photo = activeGroup?.photos?.[idx];
+                                return (
+                                  <div key={col}>
+                                    <div style={{ height: 200, borderRadius: 14, background: photo?.photo_url ? `url(${photo.photo_url}) center/cover` : `linear-gradient(160deg, ${C.gold10}, ${C.surface})`, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1.5px solid ${C.mid}` }}>
+                                      {!photo?.photo_url && <ImageIcon size={18} color={C.gold} opacity={0.5} />}
+                                    </div>
+                                    <p style={{ fontFamily: dm, fontSize: 10, color: C.muted, marginTop: 6, textAlign: 'center' }}>
+                                      {photo ? formatDate(photo.takenAt) : ''}
+                                    </p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </>
+                        )}
                       </motion.div>
                     )}
-
-                    {/* One unified grid. Only entries that actually have photos. */}
+                       {/* One unified grid. Only entries that actually have photos. */}
                     <div className="fs-photo-grid">
                       {checkinsWithPhotos.map(c => (
                         <PhotoCard key={c.id} checkin={c} onDeletePhoto={handleDeletePhoto} />
@@ -955,8 +1061,23 @@ const HistoryPage = () => {
         {showUploader && (
           <PhotoUploadSheet
             onClose={() => { setShowUploader(false); setAttachTarget(null); }}
-            onPhotoSaved={handlePhotoSaved}
+            onPhotoSaved={(dataUrl) => setPendingPhoto(dataUrl)}
             attachLabel={attachTarget?.label ?? null}
+          />
+        )}
+                {/* P3-1. The photo is held here until she confirms the conditions it
+            was taken in, then saved with them. Cancelling discards the photo
+            rather than saving one we cannot compare. */}
+        {pendingPhoto && (
+          <CaptureContext
+            lastUsed={lastContext}
+            onBack={() => setPendingPhoto(null)}
+            onDone={(ctx) => {
+              const photo = pendingPhoto;
+              setPendingPhoto(null);
+              setLastContext(ctx);
+              if (photo) handlePhotoSaved(photo, ctx);
+            }}
           />
         )}
       </AnimatePresence>

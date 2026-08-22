@@ -20,7 +20,14 @@ export interface PhotoToUpload {
   dataUrl: string;   // base64 dataUrl from camera/gallery
   area: string;      // e.g. 'Front hairline', 'Top of head'
 }
-
+// P3-1 capture context. Optional everywhere: photos taken before this existed
+// have none, and a photo without context is still a photo. Matched comparison
+// gates on having it rather than assuming it.
+export interface CaptureContext {
+  hair_state:    'dry' | 'damp' | 'wet';
+  hair_form:     'loose' | 'braided' | 'twisted' | 'locd' | 'stretched' | 'wig_or_weave' | 'cut_short';
+  product_state: 'none' | 'light' | 'full';
+}
 // ─── Convert dataUrl to File blob ────────────────────────────────────────────
 const dataUrlToFile = (dataUrl: string, filename: string): File => {
   const [header, base64] = dataUrl.split(',');
@@ -65,21 +72,22 @@ export const uploadCheckinPhotos = async (
   photos: PhotoToUpload[],
   checkinId: string,
   userId: string,
+  // Optional so existing callers keep working unchanged. When absent the
+  // columns stay null and the photo is simply not eligible for comparison.
+  context?: CaptureContext,
 ): Promise<{ success: boolean; uploaded: number; errors: number }> => {
   let uploaded = 0;
   let errors   = 0;
-
   for (const photo of photos) {
     const url = await uploadPhoto(photo.dataUrl, userId, photo.area);
-
     if (!url) { errors++; continue; }
-
     const { error } = await supabase
       .from('checkin_photos')
       .insert({
         checkin_id:  checkinId,
         photo_url:   url,
         region_tag:  toRegionTag(photo.area),
+        ...(context ?? {}),
       });
 
     if (error) {

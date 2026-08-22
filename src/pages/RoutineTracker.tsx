@@ -755,6 +755,9 @@ const RoutineTracker = () => {
         .from('routine_products')
         .select('id, phase, product_name, frequency')
         .eq('user_id', uid)
+        // Closed rows stay in the table for attribution and the timeline, but
+        // the routine screen only shows what she is using now.
+        .is('ended_on', null)
         .order('created_at', { ascending: true });
 
       if (cancelled) return;
@@ -837,8 +840,15 @@ const RoutineTracker = () => {
     setRoutineLastUpdated(Date.now());
 
     if (!target?.id) return;
-    const { error } = await supabase.from('routine_products').delete().eq('id', target.id);
-    if (error) console.error('[RoutineTracker] remove failed:', error);
+     // P3-4. Close the row, never delete it. Deleting means the app forgets she
+    // ever used the product, which makes attribution and the timeline
+    // impossible. ended_reason is left null: asking why costs a tap and she
+    // can be asked later, in a place where the answer is actually being used.
+    const { error } = await supabase
+      .from('routine_products')
+      .update({ ended_on: new Date().toISOString().slice(0, 10) })
+      .eq('id', target.id);
+    if (error) console.error('[RoutineTracker] close failed:', error);
   };
 
   const handleAddStep = () => {
